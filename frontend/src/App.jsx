@@ -56,7 +56,7 @@ const getPriorityStyles = (priority) => {
 // =============================================================================
 
 const ActionButton = ({ children, variant = 'primary', icon: Icon, onClick, loading, className = '', disabled }) => {
-  const baseClass = variant === 'primary' ? 'btn-zoho btn-zoho-primary' : 'btn-zoho btn-zoho-secondary';
+  const baseClass = variant === 'primary' ? 'btn-altitude btn-altitude-primary' : 'btn-altitude btn-altitude-secondary';
   return (
     <button className={`${baseClass} ${className}`} onClick={onClick} disabled={loading || disabled}>
       {loading ? <Loader2 className="animate-spin" size={16} /> : Icon && <Icon size={16} />}
