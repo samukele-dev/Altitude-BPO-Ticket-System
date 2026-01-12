@@ -164,7 +164,7 @@ export default function App() {
           {auth.user.role === 'it_admin' && (
             <>
               <p className="alt-nav-group-title">{!sidebarCollapsed ? 'Infrastructure' : '•'}</p>
-              <NavItem icon={Users} label="Identity Mgr" active={activeView === 'users'} onClick={() => setActiveView('users')} collapsed={sidebarCollapsed} />
+              <NavItem icon={Users} label="User Manager" active={activeView === 'users'} onClick={() => setActiveView('users')} collapsed={sidebarCollapsed} />
               <NavItem icon={BarChart3} label="Intelligence" active={activeView === 'analytics'} onClick={() => setActiveView('analytics')} collapsed={sidebarCollapsed} />
             </>
           )}
@@ -469,7 +469,8 @@ function UserManagementView({ auth }) {
                   <tr key={user.id}>
                     <td>
                       <div className="flex items-center gap-3">
-                        <div style={{ 
+                        <div style={{
+                          marginRight: '10px',
                           width: '32px', 
                           height: '32px', 
                           borderRadius: '8px', 
@@ -533,7 +534,7 @@ function UserManagementView({ auth }) {
                       <User size={48} style={{ color: '#CBD5E1', margin: '0 auto 16px' }} />
                       <p style={{ color: '#64748B', fontWeight: 600 }}>No users found</p>
                       <p style={{ fontSize: '12px', color: '#94A3B8', marginTop: '8px' }}>
-                        Use "Provision User" to add new identities to the system
+                        Use "Create User" to add new user identities to the system
                       </p>
                     </td>
                   </tr>
@@ -661,7 +662,7 @@ function TicketDetailView({ auth, ticket, onBack }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-6">
-          <button onClick={onBack} style={{ width: '40px', height: '40px', border: '1px solid #E2E8F0', borderRadius: '12px', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button onClick={onBack} style={{ marginRight: '35px', width: '40px', height: '40px', border: '1px solid #E2E8F0', borderRadius: '12px', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <ArrowLeft size={20} />
           </button>
           <div>
@@ -676,7 +677,7 @@ function TicketDetailView({ auth, ticket, onBack }) {
         {auth.user.role === 'it_admin' && ticket?.status !== 'Closed' && (
           <div className="flex gap-4">
             <ActionButton variant="secondary" icon={Clock}>Escalate SLA</ActionButton>
-            <ActionButton variant="primary" icon={CheckCircle} onClick={() => alert("Close ticket functionality requires backend implementation")}>
+            <ActionButton variant="primary" icon={CheckCircle} onClick={() => alert("Close ticket functionality requires backend implementation !!")}>
               Close & Resolve
             </ActionButton>
           </div>
@@ -720,7 +721,7 @@ function TicketDetailView({ auth, ticket, onBack }) {
                       <textarea 
                          className="alt-input" rows="4" 
                          value={newComment} onChange={(e) => setNewComment(e.target.value)}
-                         placeholder="Update the requester on the progress..."
+                         placeholder="Reply ticket on the progress..."
                          style={{ resize: 'none' }}
                       />
                       <div className="flex justify-between items-center mt-4">
@@ -728,7 +729,7 @@ function TicketDetailView({ auth, ticket, onBack }) {
                             <button type="button" style={{ padding: '8px', border: 'none', background: 'none', cursor: 'pointer' }}><Paperclip size={20} color="#94A3B8" /></button>
                             <button type="button" style={{ padding: '8px', border: 'none', background: 'none', cursor: 'pointer' }}><Smile size={20} color="#94A3B8" /></button>
                          </div>
-                         <ActionButton icon={Send} variant="primary">Post Update</ActionButton>
+                         <ActionButton icon={Send} variant="primary">Reply ticket</ActionButton>
                       </div>
                    </form>
                  </div>
@@ -814,8 +815,8 @@ function DashboardView({ auth, setView, onSelectTicket }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
-        <KpiCard label="Global Load" value={stats.total} trend="+12%" icon={Layers} color="#3B82F6" />
-        <KpiCard label="Awaiting Triage" value={stats.open} trend="+5%" icon={Clock} color="#F59E0B" />
+        <KpiCard label="Total tickets" value={stats.total} trend="+12%" icon={Layers} color="#3B82F6" />
+        <KpiCard label="Awaiting Tickets" value={stats.open} trend="+5%" icon={Clock} color="#F59E0B" />
         <KpiCard label="Resolved" value={stats.resolved} trend="+24%" icon={CheckCircle} color="#10B981" />
       </div>
 
@@ -830,7 +831,7 @@ function DashboardView({ auth, setView, onSelectTicket }) {
               <thead>
                 <tr>
                   <th>Ticket</th>
-                  <th>Topic</th>
+                  <th>Agent Name</th>
                   <th>Status</th>
                   <th>Urgency</th>
                 </tr>
