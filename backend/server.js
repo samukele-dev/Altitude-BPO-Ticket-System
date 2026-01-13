@@ -67,6 +67,7 @@ function initDatabase() {
             category TEXT,
             user_id INTEGER,
             assigned_to INTEGER,
+            resolved_at DATETIME,
             due_date DATETIME,
             estimated_time INTEGER,
             tags TEXT,
@@ -165,6 +166,33 @@ function seedInitialData() {
 // ==========================================
 // UTILITY FUNCTIONS
 // ==========================================
+// Function to update stale tickets (call this periodically)
+function updateStaleTickets() {
+    try {
+        const staleDate = new Date();
+        staleDate.setDate(staleDate.getDate() - 7); // 7 days old
+        
+        const result = db.prepare(`
+            UPDATE tickets 
+            SET status = 'Closed',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE status = 'Open' 
+            AND created_at < ?
+            AND due_date < CURRENT_TIMESTAMP
+        `).run(staleDate.toISOString());
+
+        if (result.changes > 0) {
+            console.log(`Auto-closed ${result.changes} stale tickets`);
+            logActivity(1, 'SYSTEM_AUTO_CLOSE', 'ticket', null, `Auto-closed ${result.changes} stale tickets`);
+        }
+    } catch (error) {
+        console.error('Auto-close error:', error);
+    }
+}
+
+// Call this function periodically (e.g., once a day)
+setInterval(updateStaleTickets, 24 * 60 * 60 * 1000); // Every 24 hours
+
 
 function generateUUID() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -476,7 +504,7 @@ app.get('/api/tickets/:id', authenticateToken, (req, res) => {
     }
 });
 
-// Ticket creation
+// Ticket creation with enhanced data
 app.post('/api/tickets', authenticateToken, (req, res) => {
     try {
         const { title, description, priority, category } = req.body;
@@ -486,15 +514,44 @@ app.post('/api/tickets', authenticateToken, (req, res) => {
         dueDate.setDate(dueDate.getDate() + (priority === 'Critical' ? 1 : 7));
 
         const result = db.prepare(`
-            INSERT INTO tickets (uuid, title, description, priority, category, user_id, due_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(generateUUID(), title, description, priority || 'Medium', category || 'General', req.user.id, dueDate.toISOString());
+            INSERT INTO tickets (uuid, title, description, priority, category, user_id, due_date, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        `).run(
+            generateUUID(), 
+            title, 
+            description, 
+            priority || 'Medium', 
+            category || 'General', 
+            req.user.id, 
+            dueDate.toISOString()
+        );
 
-        res.status(201).json({ success: true, ticketId: result.lastInsertRowid });
+        // Log the activity
+        logActivity(req.user.id, 'TICKET_CREATED', 'ticket', result.lastInsertRowid, `Created ticket: ${title}`, req);
+
+        // Return the created ticket with requester info
+        const newTicket = db.prepare(`
+            SELECT t.*, u.name as requester_name, u.email as requester_email, u.avatar_color as requester_avatar
+            FROM tickets t
+            JOIN users u ON t.user_id = u.id
+            WHERE t.id = ?
+        `).get(result.lastInsertRowid);
+
+        res.status(201).json({ 
+            success: true, 
+            ticket: newTicket,
+            message: 'Ticket created successfully'
+        });
     } catch (error) {
+        console.error('Ticket creation error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+
+
+// ==========================================
+// API ROUTES: DASHBOARD & ANALYTICS
+// ==========================================
 
 // ==========================================
 // API ROUTES: DASHBOARD & ANALYTICS
@@ -502,27 +559,99 @@ app.post('/api/tickets', authenticateToken, (req, res) => {
 
 app.get('/api/dashboard/stats', authenticateToken, (req, res) => {
     try {
+        // Get ticket statistics with proper status filtering
+        const whereClause = req.user.role === 'it_admin' ? '' : 'WHERE user_id = ' + req.user.id;
+        
         const stats = db.prepare(`
             SELECT 
                 COUNT(*) as total,
                 SUM(CASE WHEN status = 'Open' THEN 1 ELSE 0 END) as open,
-                SUM(CASE WHEN status = 'Resolved' THEN 1 ELSE 0 END) as resolved
+                SUM(CASE WHEN status = 'In Progress' THEN 1 ELSE 0 END) as in_progress,
+                SUM(CASE WHEN status = 'Resolved' THEN 1 ELSE 0 END) as resolved,
+                SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END) as closed,
+                SUM(CASE WHEN priority = 'Critical' THEN 1 ELSE 0 END) as critical,
+                SUM(CASE WHEN priority = 'High' THEN 1 ELSE 0 END) as high,
+                SUM(CASE WHEN priority = 'Medium' THEN 1 ELSE 0 END) as medium,
+                SUM(CASE WHEN priority = 'Low' THEN 1 ELSE 0 END) as low
             FROM tickets
-            ${req.user.role === 'it_admin' ? '' : 'WHERE user_id = ' + req.user.id}
+            ${whereClause}
         `).get();
 
-        const activity = db.prepare(`
-            SELECT a.*, u.name as user_name FROM activity_log a
-            JOIN users u ON a.user_id = u.id
-            ORDER BY a.created_at DESC LIMIT 5
-        `).all();
+        // Get recent tickets for dashboard
+        const recentQuery = `
+            SELECT t.*, u.name as requester_name, u.avatar_color as requester_avatar
+            FROM tickets t
+            LEFT JOIN users u ON t.user_id = u.id
+            ${whereClause ? whereClause.replace('user_id', 't.user_id') : ''}
+            ORDER BY t.created_at DESC 
+            LIMIT 10
+        `;
+        
+        const recentTickets = db.prepare(recentQuery).all();
 
-        res.json({ stats, recentActivity: activity });
+        // Get recent activity
+        const activityQuery = req.user.role === 'it_admin' 
+            ? 'SELECT a.*, u.name as user_name FROM activity_log a JOIN users u ON a.user_id = u.id ORDER BY a.created_at DESC LIMIT 10'
+            : 'SELECT a.*, u.name as user_name FROM activity_log a JOIN users u ON a.user_id = u.id WHERE a.user_id = ? OR a.entity_id = ? ORDER BY a.created_at DESC LIMIT 10';
+        
+        const activityParams = req.user.role === 'it_admin' ? [] : [req.user.id, req.user.id];
+        const recentActivity = db.prepare(activityQuery).all(...activityParams);
+
+        // Get performance metrics
+        const performance = db.prepare(`
+            SELECT 
+                AVG(CASE WHEN status = 'Resolved' THEN 
+                    CAST(julianday(resolved_at) - julianday(created_at) AS INTEGER) 
+                END) as avg_resolution_time_days
+            FROM tickets
+            WHERE status = 'Resolved' AND resolved_at IS NOT NULL
+            ${req.user.role === 'it_admin' ? '' : 'AND user_id = ' + req.user.id}
+        `).get();
+
+        res.json({ 
+            stats, 
+            recentTickets, 
+            recentActivity,
+            performance: {
+                avg_resolution_time_days: performance.avg_resolution_time_days ? Math.round(performance.avg_resolution_time_days * 100) / 100 : 0
+            }
+        });
     } catch (error) {
+        console.error('Dashboard stats error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
 
+
+// Get ticket status summary
+app.get('/api/tickets/status/summary', authenticateToken, (req, res) => {
+    try {
+        const whereClause = req.user.role === 'it_admin' ? '' : 'WHERE user_id = ' + req.user.id;
+        
+        const summary = db.prepare(`
+            SELECT 
+                status,
+                COUNT(*) as count,
+                ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM tickets ${whereClause}), 1) as percentage
+            FROM tickets
+            ${whereClause}
+            GROUP BY status
+            ORDER BY 
+                CASE status 
+                    WHEN 'Open' THEN 1
+                    WHEN 'In Progress' THEN 2
+                    WHEN 'Resolved' THEN 3
+                    WHEN 'Closed' THEN 4
+                    ELSE 5
+                END
+        `).all();
+
+        res.json({ summary });
+    } catch (error) {
+        console.error('Status summary error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
 
 
 // Add to server.js to complete the functionality:
@@ -571,21 +700,152 @@ app.post('/api/tickets/:id/comments', authenticateToken, (req, res) => {
 });
 
 // 4. Close Ticket
+// ==========================================
+// API ROUTES: TICKET STATUS MANAGEMENT
+// ==========================================
+
+// Update ticket status (for resolving/closing)
+app.put('/api/tickets/:id', authenticateToken, (req, res) => {
+    try {
+        const { status, resolution_note } = req.body;
+        
+        // Validate status
+        const validStatuses = ['Open', 'In Progress', 'Resolved', 'Closed'];
+        if (status && !validStatuses.includes(status)) {
+            return res.status(400).json({ error: 'Invalid status. Must be one of: Open, In Progress, Resolved, Closed' });
+        }
+
+        // Check if ticket exists and user has permission
+        const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(req.params.id);
+        if (!ticket) {
+            return res.status(404).json({ error: 'Ticket not found' });
+        }
+
+        // Check permissions (admin or ticket owner)
+        if (req.user.role !== 'it_admin' && ticket.user_id !== req.user.id) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        // Update ticket status
+        const updateFields = [];
+        const updateParams = [];
+        
+        if (status) {
+            updateFields.push('status = ?');
+            updateParams.push(status);
+            
+            // Set resolved_at if status is Resolved
+            if (status === 'Resolved') {
+                updateFields.push('resolved_at = CURRENT_TIMESTAMP');
+            }
+        }
+        
+        updateFields.push('updated_at = CURRENT_TIMESTAMP');
+        updateParams.push(req.params.id);
+        
+        const updateQuery = `UPDATE tickets SET ${updateFields.join(', ')} WHERE id = ?`;
+        db.prepare(updateQuery).run(...updateParams);
+        
+        // Log the activity
+        const action = status === 'Resolved' ? 'TICKET_RESOLVED' : 'TICKET_UPDATED';
+        logActivity(req.user.id, action, 'ticket', req.params.id, `Status changed to ${status}`, req);
+        
+        // Add resolution comment if provided
+        if (resolution_note) {
+            const commentUuid = generateUUID();
+            db.prepare(`
+                INSERT INTO ticket_comments (uuid, ticket_id, user_id, message, is_internal)
+                VALUES (?, ?, ?, ?, 1)
+            `).run(commentUuid, req.params.id, req.user.id, `Status updated to ${status}: ${resolution_note}`);
+            
+            logActivity(req.user.id, 'COMMENT_ADDED', 'ticket_comment', req.params.id, 'Added resolution comment', req);
+        }
+        
+        res.json({ 
+            success: true, 
+            message: `Ticket ${status === 'Resolved' ? 'resolved' : 'updated'} successfully`,
+            status: status
+        });
+        
+    } catch (error) {
+        console.error('Ticket update error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Close ticket with resolution
 app.put('/api/tickets/:id/close', authenticateToken, (req, res) => {
     try {
         const { resolution_note } = req.body;
         if (!resolution_note) return res.status(400).json({ error: 'Resolution note required' });
         
-        db.prepare('UPDATE tickets SET status = "Closed" WHERE id = ?').run(req.params.id);
+        // Check if ticket exists and user has permission
+        const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(req.params.id);
+        if (!ticket) {
+            return res.status(404).json({ error: 'Ticket not found' });
+        }
+
+        if (req.user.role !== 'it_admin') {
+            return res.status(403).json({ error: 'Admin access required to close tickets' });
+        }
+        
+        // Update ticket to Closed status
+        db.prepare('UPDATE tickets SET status = "Closed", updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(req.params.id);
         
         // Add resolution as comment
+        const commentUuid = generateUUID();
         db.prepare(`
             INSERT INTO ticket_comments (uuid, ticket_id, user_id, message, is_internal)
             VALUES (?, ?, ?, ?, 1)
-        `).run(generateUUID(), req.params.id, req.user.id, `Ticket closed: ${resolution_note}`);
+        `).run(commentUuid, req.params.id, req.user.id, `Ticket closed: ${resolution_note}`);
+        
+        logActivity(req.user.id, 'TICKET_CLOSED', 'ticket', req.params.id, `Closed ticket with note: ${resolution_note}`, req);
         
         res.json({ success: true, message: 'Ticket closed successfully' });
+        
     } catch (error) {
+        console.error('Close ticket error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Resolve ticket
+app.put('/api/tickets/:id/resolve', authenticateToken, (req, res) => {
+    try {
+        const { resolution_note } = req.body;
+        
+        // Check if ticket exists and user has permission
+        const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(req.params.id);
+        if (!ticket) {
+            return res.status(404).json({ error: 'Ticket not found' });
+        }
+
+        if (req.user.role !== 'it_admin' && ticket.user_id !== req.user.id) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
+        // Update ticket to Resolved status
+        db.prepare('UPDATE tickets SET status = "Resolved", resolved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(req.params.id);
+        
+        // Add resolution comment if provided
+        if (resolution_note) {
+            const commentUuid = generateUUID();
+            db.prepare(`
+                INSERT INTO ticket_comments (uuid, ticket_id, user_id, message, is_internal)
+                VALUES (?, ?, ?, ?, 1)
+            `).run(commentUuid, req.params.id, req.user.id, `Ticket resolved: ${resolution_note}`);
+        }
+        
+        logActivity(req.user.id, 'TICKET_RESOLVED', 'ticket', req.params.id, 'Resolved ticket', req);
+        
+        res.json({ 
+            success: true, 
+            message: 'Ticket resolved successfully',
+            resolved_at: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('Resolve ticket error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
