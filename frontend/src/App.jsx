@@ -109,6 +109,30 @@ export default function App() {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [globalLoading, setGlobalLoading] = useState(false);
 
+  // Add axios response interceptor for debugging
+  useEffect(() => {
+    const interceptor = axios.interceptors.response.use(
+      response => {
+        console.log('✅ API Response:', response.config.url, response.status);
+        return response;
+      },
+      error => {
+        console.error('❌ API Error:', {
+          url: error.config?.url,
+          method: error.config?.method,
+          status: error.response?.status,
+          data: error.response?.data,
+          message: error.message
+        });
+        return Promise.reject(error);
+      }
+    );
+
+    return () => {
+      axios.interceptors.response.eject(interceptor);
+    };
+  }, []);
+
   useEffect(() => {
     if (auth?.token) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${auth.token}`;
@@ -614,7 +638,7 @@ function UserManagementView({ auth }) {
 }
 
 // =============================================================================
-// MODULE: TICKET DETAILS - WORKING VERSION
+// MODULE: TICKET DETAILS - FIXED VERSION
 // =============================================================================
 function TicketDetailView({ auth, ticket, onBack }) {
   const [comments, setComments] = useState([]);
@@ -688,7 +712,7 @@ function TicketDetailView({ auth, ticket, onBack }) {
 
     setLoading(true);
     try {
-      await axios.post(`${API_BASE}/tickets/${ticket.id}/forward`, {
+      const response = await axios.post(`${API_BASE}/tickets/${ticket.id}/forward`, {
         email: forwardEmail,
         message: forwardMessage || `Ticket #INC-${ticket.id} forwarded to you for attention.`,
         forwarded_by: auth.user.name
@@ -696,13 +720,28 @@ function TicketDetailView({ auth, ticket, onBack }) {
         headers: { Authorization: `Bearer ${auth.token}` }
       });
       
+      if (response.data.emailSent) {
       alert(`✓ Ticket #INC-${ticket.id} forwarded to ${forwardEmail} successfully!`);
+
+      } else if (response.data.simulation) {
+
+        alert(`📝 Ticket forwarding logged for ${forwardEmail}.\n\nNote: Configure enterprise email in backend to send actual emails.\n\nTo enable email:\n1. Update .env file with Microsoft 365 credentials\n2. Restart backend server`);
+
+        } else {
+      alert(`⚠️ ${response.data.message}\n\n${response.data.suggestions?.join('\n') || ''}`);
+
+        }
+
       setShowForwardModal(false);
       setForwardEmail('');
       setForwardMessage('');
+
+
     } catch (err) {
       console.error("Error forwarding ticket:", err);
-      alert(`✓ Forwarding request logged for ${forwardEmail}`);
+      const errorMsg = err.response?.data?.error || err.message;
+      alert(`❌ Failed to forward ticket: ${errorMsg}\n\nTicket forwarding has been logged in the system.`);
+      
       setShowForwardModal(false);
       setForwardEmail('');
       setForwardMessage('');
@@ -711,6 +750,9 @@ function TicketDetailView({ auth, ticket, onBack }) {
     }
   };
 
+  // =============================================================================
+  // FIXED: handleCloseResolve FUNCTION WITH ADMIN PRIVILEGES
+  // =============================================================================
   const handleCloseResolve = async () => {
     if (!window.confirm("Are you sure you want to close and resolve this ticket? This action cannot be undone.")) {
       return;
@@ -718,64 +760,130 @@ function TicketDetailView({ auth, ticket, onBack }) {
 
     setLoading(true);
     try {
+      console.log(`IT Admin ${auth.user.name} attempting to resolve ticket ID: ${ticket.id}`);
+      
+      // Simple direct PUT request - the backend should handle admin permissions
       const response = await axios.put(`${API_BASE}/tickets/${ticket.id}`, {
         status: 'Resolved',
-        resolution_note: `Ticket resolved by ${auth.user.name}`,
-        resolved_at: new Date().toISOString()
+        resolution_note: `Ticket resolved by IT Admin ${auth.user.name} on ${new Date().toLocaleString()}`
       }, {
-        headers: { Authorization: `Bearer ${auth.token}` }
+        headers: { 
+          Authorization: `Bearer ${auth.token}`,
+          'Content-Type': 'application/json'
+        }
       });
       
-      alert("✓ Ticket closed and marked as resolved!");
+      console.log('Ticket resolved successfully:', response.data);
       
-      // Update local ticket status
-      ticket.status = 'Resolved';
-      
-      // Add resolution comment
+      // Update UI with resolution comment
       const resolutionComment = {
         id: Date.now(),
-        content: `Ticket resolved by ${auth.user.name} on ${new Date().toLocaleString()}`,
+        content: `Ticket resolved by IT Admin ${auth.user.name} on ${new Date().toLocaleString()}`,
         user_name: auth.user.name,
         user_role: auth.user.role,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        is_resolution_note: true
       };
-      setComments([...comments, resolutionComment]);
+      
+      setComments(prev => [...prev, resolutionComment]);
+      
+      // Update ticket status locally
+      ticket.status = 'Resolved';
       
       // Show success message
-      alert("✓ Ticket resolved successfully! The dashboard will update when you return.");
+      const successMessage = response.data?.message || 'Ticket resolved successfully!';
+      alert(`✓ ${successMessage}`);
+      
+      // Refresh comments to get updated ticket status
+      fetchComments();
       
     } catch (err) {
       console.error("Error closing ticket:", err);
       
-      let errorMsg = "Failed to resolve ticket";
+      let userErrorMessage = "Failed to resolve ticket";
+      
       if (err.response) {
+        console.error('Response error details:', {
+          status: err.response.status,
+          data: err.response.data,
+          headers: err.response.headers
+        });
+        
         if (err.response.status === 404) {
-          errorMsg = "Ticket not found on server";
+          userErrorMessage = `Ticket ID ${ticket.id} not found on server`;
         } else if (err.response.status === 403) {
-          errorMsg = "You don't have permission to resolve this ticket";
+          // This should NOT happen for IT admins, but handle it anyway
+          userErrorMessage = "Permission denied. Check if you have IT admin privileges.";
         } else if (err.response.status === 400) {
-          errorMsg = err.response.data.error || "Invalid request";
-        } else {
-          errorMsg = `Server error: ${err.response.status}`;
+          userErrorMessage = err.response.data.error || "Invalid request format";
+        } else if (err.response.status === 500) {
+          userErrorMessage = "Server error: Backend encountered an issue";
+          
+          // Offer to update locally as IT admin
+          const updateLocally = window.confirm(
+            `${userErrorMessage}\n\nAs IT Admin, do you want to mark this ticket as resolved locally? ` +
+            `(You can sync with the backend later)`
+          );
+          
+          if (updateLocally) {
+            // Update local state
+            const resolutionComment = {
+              id: Date.now(),
+              content: `Ticket resolved by IT Admin ${auth.user.name} on ${new Date().toLocaleString()} (Local Update - API Failed)`,
+              user_name: auth.user.name,
+              user_role: auth.user.role,
+              created_at: new Date().toISOString(),
+              is_resolution_note: true
+            };
+            
+            setComments(prev => [...prev, resolutionComment]);
+            ticket.status = 'Resolved';
+            alert("✓ Ticket marked as resolved locally. Please refresh or contact IT to sync with backend.");
+            return;
+          }
         }
+      } else if (err.request) {
+        userErrorMessage = "No response from server. Please check your connection.";
+      } else {
+        userErrorMessage = err.message || "Unknown error occurred";
       }
       
-      alert(`Error: ${errorMsg}`);
-      
-      // Fallback: Update locally
-      ticket.status = 'Resolved';
-      
-      const resolutionComment = {
-        id: Date.now(),
-        content: `Ticket resolved by ${auth.user.name} on ${new Date().toLocaleString()}`,
-        user_name: auth.user.name,
-        user_role: auth.user.role,
-        created_at: new Date().toISOString()
-      };
-      setComments([...comments, resolutionComment]);
+      alert(`Error: ${userErrorMessage}`);
       
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Debug function to check backend and permissions
+  const testBackendConnection = async () => {
+    try {
+      console.log('Testing backend connection and permissions...');
+      console.log('Current user:', {
+        id: auth.user.id,
+        name: auth.user.name,
+        role: auth.user.role,
+        department: auth.user.department
+      });
+      
+      const endpoints = [
+        `${API_BASE}/tickets/${ticket.id}`,
+        `${API_BASE}/debug/ticket/${ticket.id}`,
+        `${API_BASE}/health`
+      ];
+      
+      for (const endpoint of endpoints) {
+        try {
+          const response = await axios.get(endpoint, {
+            headers: { Authorization: `Bearer ${auth.token}` }
+          });
+          console.log(`✅ ${endpoint}:`, response.status, response.data ? 'Data received' : 'No data');
+        } catch (err) {
+          console.log(`❌ ${endpoint}:`, err.response?.status || err.message);
+        }
+      }
+    } catch (error) {
+      console.error('Backend test error:', error);
     }
   };
 
@@ -797,6 +905,24 @@ function TicketDetailView({ auth, ticket, onBack }) {
         
         {auth.user.role === 'it_admin' && ticket?.status !== 'Closed' && ticket?.status !== 'Resolved' && (
           <div className="flex gap-4">
+            {/* Debug button (visible in development) */}
+            {process.env.NODE_ENV === 'development' && (
+              <button 
+                onClick={testBackendConnection}
+                style={{
+                  padding: '8px 12px',
+                  background: '#F1F5F9',
+                  border: '1px solid #CBD5E1',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  color: '#64748B',
+                  cursor: 'pointer'
+                }}
+              >
+                Test Backend
+              </button>
+            )}
+            
             <ActionButton 
               variant="secondary" 
               icon={Share2} 
@@ -811,7 +937,7 @@ function TicketDetailView({ auth, ticket, onBack }) {
               onClick={handleCloseResolve}
               disabled={loading}
             >
-              Close & Resolve
+              {loading ? 'Processing...' : 'Close & Resolve'}
             </ActionButton>
           </div>
         )}
@@ -1219,15 +1345,41 @@ function TicketsListView({ auth, onSelectTicket }) {
 // =============================================================================
 // MODULE: CREATE TICKET
 // =============================================================================
+// =============================================================================
+// MODULE: CREATE TICKET
+// =============================================================================
 function CreateTicketView({ auth, onDone }) {
-  const [formData, setFormData] = useState({ title: '', category: 'Hardware', priority: 'Medium', description: '' });
+  const [formData, setFormData] = useState({ 
+    title: '', 
+    category: 'Hardware', 
+    priority: 'Medium', 
+    description: '',
+    device_name: '',
+    device_brand: '',
+    device_period: ''
+  });
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      await axios.post(`${API_BASE}/tickets`, formData, { 
+      // Include device details in the ticket data for resignation category
+      const ticketData = {
+        title: formData.title,
+        category: formData.category,
+        priority: formData.priority,
+        description: formData.description
+      };
+      
+      // Add device details if category is Resignation
+      if (formData.category === 'Resignation') {
+        ticketData.device_name = formData.device_name;
+        ticketData.device_brand = formData.device_brand;
+        ticketData.device_period = formData.device_period;
+      }
+      
+      await axios.post(`${API_BASE}/tickets`, ticketData, { 
         headers: { Authorization: `Bearer ${auth.token}` } 
       });
       alert("Ticket created successfully!");
@@ -1247,13 +1399,24 @@ function CreateTicketView({ auth, onDone }) {
         <form onSubmit={handleSubmit}>
           <div className="alt-input-group">
             <label className="alt-label">Name & Surname of Agent</label>
-            <input className="alt-input" required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} placeholder="Agent details..." />
+            <input 
+              className="alt-input" 
+              required 
+              value={formData.title} 
+              onChange={e => setFormData({...formData, title: e.target.value})} 
+              placeholder="Agent details..." 
+            />
           </div>
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             <div className="alt-input-group">
               <label className="alt-label">Category</label>
-              <select className="alt-select" required value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
+              <select 
+                className="alt-select" 
+                required 
+                value={formData.category} 
+                onChange={e => setFormData({...formData, category: e.target.value})}
+              >
                 <option>Hardware</option>
                 <option>Software</option>
                 <option>Network</option>
@@ -1264,7 +1427,12 @@ function CreateTicketView({ auth, onDone }) {
             </div>
             <div className="alt-input-group">
               <label className="alt-label">Business Urgency</label>
-              <select className="alt-select" required value={formData.priority} onChange={e => setFormData({...formData, priority: e.target.value})}>
+              <select 
+                className="alt-select" 
+                required 
+                value={formData.priority} 
+                onChange={e => setFormData({...formData, priority: e.target.value})}
+              >
                 <option>Low</option>
                 <option>Medium</option>
                 <option>High</option>
@@ -1273,9 +1441,113 @@ function CreateTicketView({ auth, onDone }) {
             </div>
           </div>
 
+          {/* Device Details Section - Only shown for Resignation category */}
+          {formData.category === 'Resignation' && (
+            <div style={{ 
+              margin: '24px 0', 
+              padding: '24px', 
+              background: '#F8FAFC', 
+              borderRadius: '12px',
+              border: '1px solid #E2E8F0'
+            }}>
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '12px', 
+                marginBottom: '20px' 
+              }}>
+                <HardDrive size={20} color="#3B82F6" />
+                <h4 style={{ fontSize: '16px', fontWeight: 800, color: '#1E293B' }}>Device Return Details</h4>
+              </div>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
+                <div className="alt-input-group">
+                  <label className="alt-label">Device Name *</label>
+                  <select 
+                    className="alt-select" 
+                    required={formData.category === 'Resignation'}
+                    value={formData.device_name} 
+                    onChange={e => setFormData({...formData, device_name: e.target.value})}
+                  >
+                    <option value="">Select device</option>
+                    <option value="Laptop">Laptop Only</option>
+                    <option value="Headset">Laptop, Charger & Headset</option>
+                    <option value="Desktop">Laptop collected by IT</option>
+                    <option value="Monitor">All equipment with IT</option>
+                    <option value="Mobile Phone">Desktop</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                
+                <div className="alt-input-group">
+                  <label className="alt-label">Device Brand</label>
+                  <select 
+                    className="alt-select" 
+                    value={formData.device_brand} 
+                    onChange={e => setFormData({...formData, device_brand: e.target.value})}
+                  >
+                    <option value="">Select brand</option>
+                    <option value="Dell">Dell</option>
+                    <option value="HP">HP</option>
+                    <option value="Lenovo">Lenovo</option>
+                    <option value="Jabra">Asus</option>
+                    <option value="Samsung">Huawei</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
+              
+              <div className="alt-input-group">
+                <label className="alt-label">Period Device Used</label>
+                <select 
+                  className="alt-select" 
+                  value={formData.device_period} 
+                  onChange={e => setFormData({...formData, device_period: e.target.value})}
+                >
+                  <option value="">Select period</option>
+                  <option value="Less than 6 months">Less than 6 months</option>
+                  <option value="6-12 months">6-12 months</option>
+                  <option value="1-2 years">1-2 years</option>
+                  <option value="2-3 years">2-3 years</option>
+                  <option value="More than 3 years">More than 3 years</option>
+                </select>
+              </div>
+              </div>
+              
+              <div style={{ 
+                marginTop: '16px', 
+                padding: '12px', 
+                background: '#EFF6FF', 
+                borderRadius: '8px',
+                borderLeft: '4px solid #3B82F6'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                  <Info size={16} color="#3B82F6" />
+                  <p style={{ fontSize: '12px', color: '#1E40AF' }}>
+                    <strong>Note:</strong> All company devices must be returned to IT Department upon resignation. 
+                    Please ensure devices are in good working condition.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="alt-input-group">
             <label className="alt-label">Describe issue in detail</label>
-            <textarea className="alt-input" rows="8" required value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Provide technical details, error codes, and steps to reproduce..." />
+            <textarea 
+              className="alt-input" 
+              rows="8" 
+              required 
+              value={formData.description} 
+              onChange={e => setFormData({...formData, description: e.target.value})} 
+              placeholder={
+                formData.category === 'Resignation' 
+                  ? "Please provide resignation details, last working day, and any other relevant information..." 
+                  : "Provide technical details, error codes, and steps to reproduce..."
+              }
+            />
           </div>
 
           <div className="flex gap-4 mt-8">

@@ -1,0 +1,66 @@
+# ===========================================
+# ALTITUDE BPO TICKETING SYSTEM - GITIGNORE
+# ===========================================
+
+# Environment Variables
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+.env.*
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp*
+.pnpm-debug.log*
+
+# Build directories
+dist/
+build/
+out/
+.next/
+.nuxt/
+
+# Database files (SQLite)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# OS generated files
+._*
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+
+# Coverage directory
+coverage/
+.nyc_output/
+
+# Security
+*.pem
+*.key
+*.crt
+
+# Package manager specific
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
