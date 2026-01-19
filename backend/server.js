@@ -302,6 +302,48 @@ function seedInitialData() {
     }
 }
 
+function addDeviceColumnsToTickets() {
+  try {
+    // Check if device_name column exists
+    const tableInfo = db.prepare("PRAGMA table_info(tickets)").all();
+    
+    // Add device_name if it doesn't exist
+    const hasDeviceName = tableInfo.some(column => column.name === 'device_name');
+    if (!hasDeviceName) {
+      console.log('Adding device_name column to tickets table');
+      db.exec("ALTER TABLE tickets ADD COLUMN device_name TEXT");
+    }
+    
+    // Add device_brand if it doesn't exist
+    const hasDeviceBrand = tableInfo.some(column => column.name === 'device_brand');
+    if (!hasDeviceBrand) {
+      console.log('Adding device_brand column to tickets table');
+      db.exec("ALTER TABLE tickets ADD COLUMN device_brand TEXT");
+    }
+    
+    // Add device_period if it doesn't exist
+    const hasDevicePeriod = tableInfo.some(column => column.name === 'device_period');
+    if (!hasDevicePeriod) {
+      console.log('Adding device_period column to tickets table');
+      db.exec("ALTER TABLE tickets ADD COLUMN device_period TEXT");
+    }
+    
+    console.log('✅ Device columns added to tickets table');
+    
+  } catch (error) {
+    console.error('Error adding device columns:', error);
+  }
+}
+
+// Call this function in your initDatabase() function:
+function initDatabase() {
+  // ... existing code ...
+  
+  runDatabaseMigrations();
+  addDeviceColumnsToTickets(); // Add this line
+  seedInitialData();
+}
+
 // ==========================================
 // UTILITY FUNCTIONS
 // ==========================================
@@ -767,19 +809,15 @@ app.post('/api/tickets', authenticateToken, (req, res) => {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + (priority === 'Critical' ? 1 : 7));
 
-    // Prepare tags to include device details for resignation tickets
-    let tags = '';
-    if (category === 'Resignation') {
-      const deviceDetails = [];
-      if (device_name) deviceDetails.push(`Device: ${device_name}`);
-      if (device_brand) deviceDetails.push(`Brand: ${device_brand}`);
-      if (device_period) deviceDetails.push(`Used: ${device_period}`);
-      tags = deviceDetails.join(' | ');
-    }
-
+    // Add new columns for device information
     const result = db.prepare(`
-      INSERT INTO tickets (uuid, title, description, priority, category, user_id, due_date, tags, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      INSERT INTO tickets (
+        uuid, title, description, priority, category, 
+        user_id, due_date, tags, 
+        device_name, device_brand, device_period,  -- New columns
+        created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `).run(
       generateUUID(), 
       title, 
@@ -788,13 +826,16 @@ app.post('/api/tickets', authenticateToken, (req, res) => {
       category || 'General', 
       req.user.id, 
       dueDate.toISOString(),
-      tags
+      category === 'Resignation' ? 'Resignation-Device-Return' : '',  // Simplified tags
+      device_name || null,
+      device_brand || null,
+      device_period || null
     );
 
     // Log the activity
     logActivity(req.user.id, 'TICKET_CREATED', 'ticket', result.lastInsertRowid, `Created ticket: ${title}`, req);
 
-    // Return the created ticket with requester info
+    // Return the created ticket with all fields
     const newTicket = db.prepare(`
       SELECT t.*, u.name as requester_name, u.email as requester_email, u.avatar_color as requester_avatar
       FROM tickets t
@@ -812,7 +853,6 @@ app.post('/api/tickets', authenticateToken, (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
 // ==========================================
 // API ROUTES: COMMENTS
 // ==========================================

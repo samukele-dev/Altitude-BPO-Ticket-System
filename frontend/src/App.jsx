@@ -180,7 +180,7 @@ export default function App() {
         <nav style={{ flex: 1, padding: '12px' }}>
           <p className="alt-nav-group-title">{!sidebarCollapsed ? 'Operations' : '•'}</p>
           <NavItem icon={LayoutDashboard} label="Ticket Center" active={activeView === 'dashboard'} onClick={() => setActiveView('dashboard')} collapsed={sidebarCollapsed} />
-          <NavItem icon={Ticket} label="Service Tickets" active={activeView === 'tickets'} onClick={() => setActiveView('tickets')} collapsed={sidebarCollapsed} />
+          <NavItem icon={Ticket} label="View Tickets" active={activeView === 'tickets'} onClick={() => setActiveView('tickets')} collapsed={sidebarCollapsed} />
           <NavItem icon={PlusCircle} label="Log Ticket" active={activeView === 'create'} onClick={() => setActiveView('create')} collapsed={sidebarCollapsed} />
 
           {auth.user.role === 'it_admin' && (
@@ -218,11 +218,11 @@ export default function App() {
           <div className="flex items-center gap-4">
             <div style={{ position: 'relative', cursor: 'pointer' }}>
               <Bell size={20} color="#64748B" />
-              <span style={{ position: 'absolute', top: '-5px', right: '-5px', background: 'red', color: 'white', fontSize: '10px', padding: '2px 5px', borderRadius: '10px', fontWeight: 'bold' }}>3</span>
+              <span style={{ position: 'absolute', top: '-5px', right: '-5px', background: 'red', color: 'white', fontSize: '10px', padding: '2px 5px', borderRadius: '10px', fontWeight: 'bold' }}>4</span>
             </div>
             <div style={{ width: '1px', height: '24px', background: '#E2E8F0' }}></div>
-            <div className="flex items-center gap-3">
-              <div style={{ textAlign: 'right' }}>
+            <div className="flex items-center gap-3" >
+              <div style={{ textAlign: 'right',  marginRight: '20px' }}>
                 <p style={{ fontSize: '12px', fontWeight: 800 }}>{auth.user.name}</p>
                 <p style={{ fontSize: '10px', color: '#94A3B8', fontWeight: 700 }}>{auth.user.department} • {auth.user.role === 'it_admin' ? 'SYSTEM ADMIN' : 'EMPLOYEE'}</p>
               </div>
@@ -427,8 +427,8 @@ function UserManagementView({ auth }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div className="flex justify-between items-end">
         <div>
-          <h2 style={{ fontSize: '28px', fontWeight: 900 }}>Identity Manager</h2>
-          <p style={{ color: 'var(--text-muted)' }}>Managing {users.length} active enterprise identities.</p>
+          <h2 style={{ fontSize: '28px', fontWeight: 900 }}>User Manager</h2>
+          <p style={{ color: 'var(--text-muted)' }}>Managing {users.length} active users.</p>
         </div>
         <div className="flex gap-3">
           <ActionButton variant="secondary" icon={RefreshCw} onClick={handleRefresh} disabled={loading}>
@@ -638,7 +638,7 @@ function UserManagementView({ auth }) {
 }
 
 // =============================================================================
-// MODULE: TICKET DETAILS - FIXED VERSION
+// MODULE: TICKET DETAILS - WITH RESIGNATION INFORMATION
 // =============================================================================
 function TicketDetailView({ auth, ticket, onBack }) {
   const [comments, setComments] = useState([]);
@@ -669,6 +669,16 @@ function TicketDetailView({ auth, ticket, onBack }) {
       fetchComments(); 
     }
   }, [fetchComments, ticket?.id]);
+
+  // Check if this is a resignation ticket
+  const isResignationTicket = ticket?.category === 'Resignation';
+  
+  // Device information structure for resignation tickets
+  const deviceInfo = ticket?.device_details || {
+    device_name: ticket?.device_name || 'Not specified',
+    device_brand: ticket?.device_brand || 'Not specified',
+    device_period: ticket?.device_period || 'Not specified'
+  };
 
   const handlePost = async (e) => {
     e.preventDefault();
@@ -703,56 +713,6 @@ function TicketDetailView({ auth, ticket, onBack }) {
     }
   };
 
-  const handleForwardTicket = async (e) => {
-    e.preventDefault();
-    if (!forwardEmail.trim()) {
-      alert("Please enter a valid email address");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const response = await axios.post(`${API_BASE}/tickets/${ticket.id}/forward`, {
-        email: forwardEmail,
-        message: forwardMessage || `Ticket #INC-${ticket.id} forwarded to you for attention.`,
-        forwarded_by: auth.user.name
-      }, {
-        headers: { Authorization: `Bearer ${auth.token}` }
-      });
-      
-      if (response.data.emailSent) {
-      alert(`✓ Ticket #INC-${ticket.id} forwarded to ${forwardEmail} successfully!`);
-
-      } else if (response.data.simulation) {
-
-        alert(`📝 Ticket forwarding logged for ${forwardEmail}.\n\nNote: Configure enterprise email in backend to send actual emails.\n\nTo enable email:\n1. Update .env file with Microsoft 365 credentials\n2. Restart backend server`);
-
-        } else {
-      alert(`⚠️ ${response.data.message}\n\n${response.data.suggestions?.join('\n') || ''}`);
-
-        }
-
-      setShowForwardModal(false);
-      setForwardEmail('');
-      setForwardMessage('');
-
-
-    } catch (err) {
-      console.error("Error forwarding ticket:", err);
-      const errorMsg = err.response?.data?.error || err.message;
-      alert(`❌ Failed to forward ticket: ${errorMsg}\n\nTicket forwarding has been logged in the system.`);
-      
-      setShowForwardModal(false);
-      setForwardEmail('');
-      setForwardMessage('');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // =============================================================================
-  // FIXED: handleCloseResolve FUNCTION WITH ADMIN PRIVILEGES
-  // =============================================================================
   const handleCloseResolve = async () => {
     if (!window.confirm("Are you sure you want to close and resolve this ticket? This action cannot be undone.")) {
       return;
@@ -762,7 +722,6 @@ function TicketDetailView({ auth, ticket, onBack }) {
     try {
       console.log(`IT Admin ${auth.user.name} attempting to resolve ticket ID: ${ticket.id}`);
       
-      // Simple direct PUT request - the backend should handle admin permissions
       const response = await axios.put(`${API_BASE}/tickets/${ticket.id}`, {
         status: 'Resolved',
         resolution_note: `Ticket resolved by IT Admin ${auth.user.name} on ${new Date().toLocaleString()}`
@@ -775,7 +734,6 @@ function TicketDetailView({ auth, ticket, onBack }) {
       
       console.log('Ticket resolved successfully:', response.data);
       
-      // Update UI with resolution comment
       const resolutionComment = {
         id: Date.now(),
         content: `Ticket resolved by IT Admin ${auth.user.name} on ${new Date().toLocaleString()}`,
@@ -786,15 +744,11 @@ function TicketDetailView({ auth, ticket, onBack }) {
       };
       
       setComments(prev => [...prev, resolutionComment]);
-      
-      // Update ticket status locally
       ticket.status = 'Resolved';
       
-      // Show success message
       const successMessage = response.data?.message || 'Ticket resolved successfully!';
       alert(`✓ ${successMessage}`);
       
-      // Refresh comments to get updated ticket status
       fetchComments();
       
     } catch (err) {
@@ -812,21 +766,18 @@ function TicketDetailView({ auth, ticket, onBack }) {
         if (err.response.status === 404) {
           userErrorMessage = `Ticket ID ${ticket.id} not found on server`;
         } else if (err.response.status === 403) {
-          // This should NOT happen for IT admins, but handle it anyway
           userErrorMessage = "Permission denied. Check if you have IT admin privileges.";
         } else if (err.response.status === 400) {
           userErrorMessage = err.response.data.error || "Invalid request format";
         } else if (err.response.status === 500) {
           userErrorMessage = "Server error: Backend encountered an issue";
           
-          // Offer to update locally as IT admin
           const updateLocally = window.confirm(
             `${userErrorMessage}\n\nAs IT Admin, do you want to mark this ticket as resolved locally? ` +
             `(You can sync with the backend later)`
           );
           
           if (updateLocally) {
-            // Update local state
             const resolutionComment = {
               id: Date.now(),
               content: `Ticket resolved by IT Admin ${auth.user.name} on ${new Date().toLocaleString()} (Local Update - API Failed)`,
@@ -855,35 +806,45 @@ function TicketDetailView({ auth, ticket, onBack }) {
     }
   };
 
-  // Debug function to check backend and permissions
-  const testBackendConnection = async () => {
+  const handleForwardTicket = async (e) => {
+    e.preventDefault();
+    if (!forwardEmail.trim()) {
+      alert("Please enter a valid email address");
+      return;
+    }
+
+    setLoading(true);
     try {
-      console.log('Testing backend connection and permissions...');
-      console.log('Current user:', {
-        id: auth.user.id,
-        name: auth.user.name,
-        role: auth.user.role,
-        department: auth.user.department
+      const response = await axios.post(`${API_BASE}/tickets/${ticket.id}/forward`, {
+        email: forwardEmail,
+        message: forwardMessage || `Ticket #INC-${ticket.id} forwarded to you for attention.`,
+        forwarded_by: auth.user.name
+      }, {
+        headers: { Authorization: `Bearer ${auth.token}` }
       });
-      
-      const endpoints = [
-        `${API_BASE}/tickets/${ticket.id}`,
-        `${API_BASE}/debug/ticket/${ticket.id}`,
-        `${API_BASE}/health`
-      ];
-      
-      for (const endpoint of endpoints) {
-        try {
-          const response = await axios.get(endpoint, {
-            headers: { Authorization: `Bearer ${auth.token}` }
-          });
-          console.log(`✅ ${endpoint}:`, response.status, response.data ? 'Data received' : 'No data');
-        } catch (err) {
-          console.log(`❌ ${endpoint}:`, err.response?.status || err.message);
-        }
+    
+      if (response.data.emailSent) {
+        alert(`✓ Ticket #INC-${ticket.id} forwarded to ${forwardEmail} successfully!`);
+      } else if (response.data.simulation) {
+        alert(`📝 Ticket forwarding logged for ${forwardEmail}.\n\nNote: Configure enterprise email in backend to send actual emails.\n\nTo enable email:\n1. Update .env file with Microsoft 365 credentials\n2. Restart backend server`);
+      } else {
+        alert(`⚠️ ${response.data.message}\n\n${response.data.suggestions?.join('\n') || ''}`);
       }
-    } catch (error) {
-      console.error('Backend test error:', error);
+
+      setShowForwardModal(false);
+      setForwardEmail('');
+      setForwardMessage('');
+
+    } catch (err) {
+      console.error("Error forwarding ticket:", err);
+      const errorMsg = err.response?.data?.error || err.message;
+      alert(`❌ Failed to forward ticket: ${errorMsg}\n\nTicket forwarding has been logged in the system.`);
+
+      setShowForwardModal(false);
+      setForwardEmail('');
+      setForwardMessage('');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -898,6 +859,21 @@ function TicketDetailView({ auth, ticket, onBack }) {
               <div className="flex items-center gap-3">
                 <h2 style={{ fontSize: '24px', fontWeight: 900 }}>#INC-{ticket?.id}</h2>
                 <StatusBadge status={ticket?.status || 'Open'} />
+                {isResignationTicket && (
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    color: '#DC2626',
+                    background: '#FEE2E2',
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    <ShieldAlert size={12} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
+                    Resignation
+                  </span>
+                )}
               </div>
               <p style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{ticket?.title}</p>
           </div>
@@ -905,24 +881,6 @@ function TicketDetailView({ auth, ticket, onBack }) {
         
         {auth.user.role === 'it_admin' && ticket?.status !== 'Closed' && ticket?.status !== 'Resolved' && (
           <div className="flex gap-4">
-            {/* Debug button (visible in development) */}
-            {process.env.NODE_ENV === 'development' && (
-              <button 
-                onClick={testBackendConnection}
-                style={{
-                  padding: '8px 12px',
-                  background: '#F1F5F9',
-                  border: '1px solid #CBD5E1',
-                  borderRadius: '6px',
-                  fontSize: '12px',
-                  color: '#64748B',
-                  cursor: 'pointer'
-                }}
-              >
-                Test Backend
-              </button>
-            )}
-            
             <ActionButton 
               variant="secondary" 
               icon={Share2} 
@@ -957,6 +915,58 @@ function TicketDetailView({ auth, ticket, onBack }) {
                   </div>
                <p style={{ paddingBottom: '30px', fontWeight: 800 }}>Agent Name : {ticket?.title}</p>
 
+               {/* RESIGNATION SPECIFIC INFORMATION */}
+               {isResignationTicket && (
+                 <div style={{ 
+                   marginBottom: '24px', 
+                   padding: '20px', 
+                   background: '#FEF2F2', 
+                   borderRadius: '12px',
+                   border: '1px solid #FECACA'
+                 }}>
+                   <div style={{ 
+                     display: 'flex', 
+                     alignItems: 'center', 
+                     gap: '12px', 
+                     marginBottom: '16px' 
+                   }}>
+                     <HardDrive size={20} color="#DC2626" />
+                     <h4 style={{ fontSize: '16px', fontWeight: 800, color: '#DC2626' }}>Device Return Information</h4>
+                   </div>
+                   
+                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                     <div>
+                       <p style={{ fontSize: '12px', color: '#64748B', fontWeight: 600, marginBottom: '4px' }}>Device Name</p>
+                       <p style={{ fontSize: '14px', fontWeight: 700, color: '#1E293B' }}>{deviceInfo.device_name}</p>
+                     </div>
+                     <div>
+                       <p style={{ fontSize: '12px', color: '#64748B', fontWeight: 600, marginBottom: '4px' }}>Device Brand</p>
+                       <p style={{ fontSize: '14px', fontWeight: 700, color: '#1E293B' }}>{deviceInfo.device_brand}</p>
+                     </div>
+                     <div>
+                       <p style={{ fontSize: '12px', color: '#64748B', fontWeight: 600, marginBottom: '4px' }}>Usage Period</p>
+                       <p style={{ fontSize: '14px', fontWeight: 700, color: '#1E293B' }}>{deviceInfo.device_period}</p>
+                     </div>
+                   </div>
+                   
+                   <div style={{ 
+                     marginTop: '16px', 
+                     padding: '12px', 
+                     background: '#FEE2E2', 
+                     borderRadius: '8px',
+                     borderLeft: '4px solid #DC2626'
+                   }}>
+                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                       <Info size={16} color="#DC2626" />
+                       <p style={{ fontSize: '12px', color: '#7F1D1D' }}>
+                         <strong>HR Action Required:</strong> This resignation requires HR coordination for exit interview and device collection. 
+                         All company assets must be returned to IT Department.
+                       </p>
+                     </div>
+                   </div>
+                 </div>
+               )}
+
                <div style={{ fontSize: '15px', lineHeight: 1.8, color: '#334155' }}>{ticket?.description}</div>
             </div>
 
@@ -980,7 +990,11 @@ function TicketDetailView({ auth, ticket, onBack }) {
                          required 
                          value={newComment} 
                          onChange={(e) => setNewComment(e.target.value)}
-                         placeholder="Reply ticket on the progress..."
+                         placeholder={
+                           isResignationTicket 
+                             ? "Update on device collection status or HR coordination..." 
+                             : "Reply ticket on the progress..."
+                         }
                          style={{ resize: 'none' }}
                          disabled={loading}
                       />
@@ -1016,6 +1030,13 @@ function TicketDetailView({ auth, ticket, onBack }) {
                    <p style={{ fontSize: '13px', color: '#334155' }}>
                      This ticket has been closed and resolved. No further actions can be taken.
                    </p>
+                   {isResignationTicket && ticket?.resolution_note && (
+                     <div style={{ marginTop: '12px', padding: '12px', background: '#DCFCE7', borderRadius: '6px' }}>
+                       <p style={{ fontSize: '12px', fontWeight: 600, color: '#166534' }}>
+                         <strong>Resolution Note:</strong> {ticket.resolution_note}
+                       </p>
+                     </div>
+                   )}
                  </div>
                ) : null}
             </div>
@@ -1026,18 +1047,38 @@ function TicketDetailView({ auth, ticket, onBack }) {
                <h4 className="alt-card-title" style={{ marginBottom: '20px' }}>Incident Metadata</h4>
                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   <MetaRow label="Severity" value={ticket?.priority} color={getPriorityStyles(ticket?.priority).color} />
-                  <MetaRow label="Category" value={ticket?.category} />
+                  <MetaRow label="Category" value={
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span>{ticket?.category}</span>
+                      {isResignationTicket && <ShieldAlert size={14} color="#DC2626" />}
+                    </div>
+                  } />
                   <MetaRow label="Assigned To" value="IT Support" />
                   <MetaRow label="Contact" value={ticket?.requester_email} />
                   <MetaRow label="Ticket ID" value={`#INC-${ticket?.id}`} />
                   <MetaRow label="Created" value={formatBusinessDate(ticket?.created_at)} />
+                  
+                  {/* Additional resignation-specific metadata */}
+                  {isResignationTicket && (
+                    <>
+                      <div style={{ marginTop: '8px', paddingTop: '16px', borderTop: '1px solid #E2E8F0' }}>
+                        <p style={{ fontSize: '11px', fontWeight: 800, color: '#DC2626', textTransform: 'uppercase', marginBottom: '12px' }}>Resignation Details</p>
+                        <MetaRow label="Device" value={deviceInfo.device_name} />
+                        <MetaRow label="Brand" value={deviceInfo.device_brand} />
+                        <MetaRow label="Usage" value={deviceInfo.device_period} />
+                      </div>
+                    </>
+                  )}
                </div>
             </div>
 
             <div className="alt-card" style={{ padding: '24px', background: '#F8FAFC' }}>
                <h4 className="alt-card-title" style={{ marginBottom: '12px' }}>Resolution Service</h4>
                <p style={{ fontSize: '12px', color: '#64748B', lineHeight: '1.5', marginBottom: '16px' }}>
-                 Closing this ticket will notify the user. All history is archived.
+                 {isResignationTicket 
+                   ? "Closing this resignation ticket will notify HR and IT for final clearance."
+                   : "Closing this ticket will notify the user. All history is archived."
+                 }
                </p>
                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                  <button 
@@ -1057,7 +1098,64 @@ function TicketDetailView({ auth, ticket, onBack }) {
                    </button>
                  )}
                </div>
+               
+               {/* Special note for resignation tickets */}
+               {isResignationTicket && ticket?.status !== 'Closed' && ticket?.status !== 'Resolved' && (
+                 <div style={{ 
+                   marginTop: '16px', 
+                   padding: '12px', 
+                   background: '#FEF2F2', 
+                   borderRadius: '8px',
+                   border: '1px solid #FECACA'
+                 }}>
+                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                     <AlertCircle size={14} color="#DC2626" />
+                     <p style={{ fontSize: '11px', color: '#7F1D1D', lineHeight: '1.4' }}>
+                       <strong>Important:</strong> Before resolving, ensure all company assets have been returned and HR exit process is complete.
+                     </p>
+                   </div>
+                 </div>
+               )}
             </div>
+            
+            
+            {/* HR Coordination Section for Resignation Tickets 
+            {isResignationTicket && (
+              <div className="alt-card" style={{ 
+                padding: '24px', 
+                background: '#FFF7ED',
+                border: '1px solid #FDBA74'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                  <Users size={20} color="#F97316" />
+                  <h4 className="alt-card-title" style={{ color: '#F97316' }}>HR Coordination Required</h4>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <ActionButton 
+                    variant="secondary" 
+                    icon={Mail}
+                    onClick={() => setForwardEmail('hr@altitudebpo.com')}
+                    style={{ justifyContent: 'flex-start' }}
+                  >
+                    Notify HR Department
+                  </ActionButton>
+                  <ActionButton 
+                    variant="secondary" 
+                    icon={FileText}
+                    style={{ justifyContent: 'flex-start' }}
+                  >
+                    Generate Exit Checklist
+                  </ActionButton>
+                  <ActionButton 
+                    variant="secondary" 
+                    icon={Calendar}
+                    style={{ justifyContent: 'flex-start' }}
+                  >
+                    Schedule Exit Interview
+                  </ActionButton>
+                </div>
+              </div>
+            )} */}
          </div>
       </div>
 
@@ -1076,8 +1174,13 @@ function TicketDetailView({ auth, ticket, onBack }) {
               required 
               value={forwardEmail}
               onChange={(e) => setForwardEmail(e.target.value)}
-              placeholder="recipient@altitudebpo.com"
+              placeholder={isResignationTicket ? "hr@altitudebpo.com" : "recipient@altitudebpo.com"}
             />
+            {isResignationTicket && (
+              <p style={{ fontSize: '10px', color: '#F97316', marginTop: '6px', fontWeight: 600 }}>
+                Suggested: Forward to HR department for exit process coordination
+              </p>
+            )}
           </div>
           <div className="alt-input-group">
             <label className="alt-label">Additional Message (Optional)</label>
@@ -1086,7 +1189,11 @@ function TicketDetailView({ auth, ticket, onBack }) {
               rows="3"
               value={forwardMessage}
               onChange={(e) => setForwardMessage(e.target.value)}
-              placeholder="Add a note about why you're forwarding this ticket..."
+              placeholder={
+                isResignationTicket 
+                  ? "This resignation requires HR coordination for exit process and device return..."
+                  : "Add a note about why you're forwarding this ticket..."
+              }
               style={{ resize: 'none' }}
             />
           </div>
@@ -1096,6 +1203,13 @@ function TicketDetailView({ auth, ticket, onBack }) {
               <p>ID: #INC-{ticket?.id}</p>
               <p>Agent: {ticket?.title}</p>
               <p>Category: {ticket?.category}</p>
+              {isResignationTicket && deviceInfo.device_name && (
+                <>
+                  <p>Device: {deviceInfo.device_name}</p>
+                  <p>Brand: {deviceInfo.device_brand}</p>
+                  <p>Usage: {deviceInfo.device_period}</p>
+                </>
+              )}
             </div>
           </div>
           <div className="flex gap-3 mt-8">
@@ -1286,7 +1400,7 @@ function TicketsListView({ auth, onSelectTicket }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div className="flex justify-between items-end">
         <div>
-          <h2 style={{ fontSize: '28px', fontWeight: 900 }}>Service Repository</h2>
+          <h2 style={{ fontSize: '28px', fontWeight: 900 }}>All Tickets</h2>
           <p style={{ color: 'var(--text-muted)' }}>Managing {tickets.length} enterprise records.</p>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
