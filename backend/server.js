@@ -709,6 +709,174 @@ app.get('/api/admin/users', authenticateToken, isAdmin, (req, res) => {
     }
 });
 
+
+// ==========================================
+// API ROUTES: USER MANAGEMENT
+// ==========================================
+
+// Update user password (for forgotten passwords)
+app.put('/api/admin/users/:id/password', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    const { new_password } = req.body;
+
+    if (!new_password || new_password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    }
+
+    // Check if user exists
+    const user = db.prepare('SELECT id FROM users WHERE id = ?').get(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Hash the new password
+    const hashedPassword = await bcrypt.hash(new_password, 10);
+
+    // Update user password
+    db.prepare('UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(hashedPassword, userId);
+
+    // Log the activity
+    logActivity(req.user.id, 'USER_PASSWORD_RESET', 'user', userId, `Password reset for user ID ${userId}`, req);
+
+    res.json({
+      success: true,
+      message: 'Password updated successfully',
+      user_id: userId
+    });
+  } catch (error) {
+    console.error('Password update error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get user activity logs
+app.get('/api/admin/users/:id/activity', authenticateToken, isAdmin, (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+
+    // Check if user exists
+    const user = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Get user activity logs (last 50 activities)
+    const activities = db.prepare(`
+      SELECT 
+        al.*,
+        u.name as performed_by_name,
+        u.email as performed_by_email
+      FROM activity_log al
+      LEFT JOIN users u ON al.user_id = u.id
+      WHERE al.user_id = ? OR al.entity_id = ?
+      ORDER BY al.created_at DESC
+      LIMIT 50
+    `).all(userId, userId);
+
+    res.json({
+      user: user,
+      activities: activities,
+      count: activities.length
+    });
+  } catch (error) {
+    console.error('Activity fetch error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Toggle user active status
+app.put('/api/admin/users/:id/toggle-status', authenticateToken, isAdmin, (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    
+    // Get current status
+    const user = db.prepare('SELECT id, is_active, name FROM users WHERE id = ?').get(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Toggle status
+    const newStatus = user.is_active === 1 ? 0 : 1;
+    const statusText = newStatus === 1 ? 'activated' : 'deactivated';
+    
+    db.prepare('UPDATE users SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(newStatus, userId);
+
+    // Log the activity
+    logActivity(req.user.id, 'USER_STATUS_CHANGED', 'user', userId, 
+      `User ${statusText}: ${user.name} (ID: ${userId})`, req);
+
+    res.json({
+      success: true,
+      message: `User ${statusText} successfully`,
+      user_id: userId,
+      is_active: newStatus
+    });
+  } catch (error) {
+    console.error('Toggle status error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get user details for editing
+app.get('/api/admin/users/:id', authenticateToken, isAdmin, (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    
+    const user = db.prepare(`
+      SELECT 
+        id, uuid, name, email, role, department, 
+        avatar_color, is_active, last_login, created_at, phone
+      FROM users 
+      WHERE id = ?
+    `).get(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({ user });
+  } catch (error) {
+    console.error('Get user error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update user details
+app.put('/api/admin/users/:id', authenticateToken, isAdmin, (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    const { name, department, role, phone } = req.body;
+
+    // Check if user exists
+    const existingUser = db.prepare('SELECT id FROM users WHERE id = ?').get(userId);
+    if (!existingUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Update user
+    db.prepare(`
+      UPDATE users 
+      SET name = ?, department = ?, role = ?, phone = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(name || '', department || '', role || 'user', phone || '', userId);
+
+    // Log the activity
+    logActivity(req.user.id, 'USER_UPDATED', 'user', userId, 'User details updated', req);
+
+    res.json({
+      success: true,
+      message: 'User updated successfully',
+      user_id: userId
+    });
+  } catch (error) {
+    console.error('Update user error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ==========================================
 // API ROUTES: TICKETING SYSTEM
 // ==========================================
@@ -853,6 +1021,8 @@ app.post('/api/tickets', authenticateToken, (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+
 // ==========================================
 // API ROUTES: COMMENTS
 // ==========================================
@@ -1404,14 +1574,13 @@ app.put('/api/tickets/:id/close', authenticateToken, (req, res) => {
 // API ROUTES: DASHBOARD & ANALYTICS
 // ==========================================
 
-// Note: This is a duplicate route - removed to avoid conflict
 
 // Get ticket status summary
-// Note: This is a duplicate route - removed to avoid conflict
 
 // ==========================================
 // DEBUG ENDPOINTS (for troubleshooting)
 // ==========================================
+
 
 app.get('/api/debug/tickets', authenticateToken, (req, res) => {
     try {

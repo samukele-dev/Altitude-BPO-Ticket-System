@@ -324,8 +324,14 @@ function LoginModule({ onLogin, loading }) {
 function UserManagementView({ auth }) {
   const [users, setUsers] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [showEditUser, setShowEditUser] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showActivityModal, setShowActivityModal] = useState(false);
+  const [showMoreOptions, setShowMoreOptions] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [userActivities, setUserActivities] = useState([]);
   
   const [formData, setFormData] = useState({
     full_name: '',
@@ -333,6 +339,18 @@ function UserManagementView({ auth }) {
     department: 'Operations',
     role_profile: 'Standard User',
     temporary_access_key: 'Default2026!'
+  });
+
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    department: '',
+    role: 'user',
+    phone: ''
+  });
+
+  const [passwordFormData, setPasswordFormData] = useState({
+    new_password: '',
+    confirm_password: ''
   });
 
   const fetchUsers = useCallback(async () => {
@@ -419,6 +437,118 @@ function UserManagementView({ auth }) {
     }
   };
 
+  const handleEditUser = async (user) => {
+    setSelectedUser(user);
+    setEditFormData({
+      name: user.name,
+      department: user.department || '',
+      role: user.role || 'user',
+      phone: user.phone || ''
+    });
+    setShowEditUser(true);
+  };
+
+  const handleSaveEdit = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.put(`${API_BASE}/admin/users/${selectedUser.id}`, editFormData, {
+        headers: { Authorization: `Bearer ${auth.token}` }
+      });
+
+      if (response.data.success) {
+        alert("✓ User details updated successfully!");
+        setShowEditUser(false);
+        fetchUsers();
+      }
+    } catch (err) {
+      console.error('Update user error:', err);
+      alert(err.response?.data?.error || "Failed to update user details.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (user) => {
+    setSelectedUser(user);
+    setPasswordFormData({
+      new_password: '',
+      confirm_password: ''
+    });
+    setShowPasswordModal(true);
+  };
+
+  const handleSavePassword = async () => {
+    if (passwordFormData.new_password !== passwordFormData.confirm_password) {
+      alert("Error: Passwords do not match!");
+      return;
+    }
+
+    if (passwordFormData.new_password.length < 6) {
+      alert("Error: Password must be at least 6 characters long!");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await axios.put(`${API_BASE}/admin/users/${selectedUser.id}/password`, {
+        new_password: passwordFormData.new_password
+      }, {
+        headers: { Authorization: `Bearer ${auth.token}` }
+      });
+
+      if (response.data.success) {
+        alert("✓ Password reset successfully!");
+        setShowPasswordModal(false);
+        setPasswordFormData({ new_password: '', confirm_password: '' });
+      }
+    } catch (err) {
+      console.error('Password reset error:', err);
+      alert(err.response?.data?.error || "Failed to reset password.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleViewActivity = async (user) => {
+    setSelectedUser(user);
+    setLoading(true);
+    try {
+      const response = await axios.get(`${API_BASE}/admin/users/${user.id}/activity`, {
+        headers: { Authorization: `Bearer ${auth.token}` }
+      });
+      setUserActivities(response.data.activities);
+      setShowActivityModal(true);
+    } catch (err) {
+      console.error('Activity fetch error:', err);
+      alert(err.response?.data?.error || "Failed to load user activity.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleToggleStatus = async (user) => {
+    if (!window.confirm(`Are you sure you want to ${user.is_active === 1 ? 'deactivate' : 'activate'} ${user.name}?`)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await axios.put(`${API_BASE}/admin/users/${user.id}/toggle-status`, {}, {
+        headers: { Authorization: `Bearer ${auth.token}` }
+      });
+
+      if (response.data.success) {
+        alert(`✓ User ${user.is_active === 1 ? 'deactivated' : 'activated'} successfully!`);
+        fetchUsers();
+      }
+    } catch (err) {
+      console.error('Toggle status error:', err);
+      alert(err.response?.data?.error || "Failed to update user status.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleRefresh = () => {
     fetchUsers();
   };
@@ -469,7 +599,7 @@ function UserManagementView({ auth }) {
                   <th>Status</th>
                   <th>Last Login</th>
                   <th>Joined Date</th>
-                  <th></th>
+                  <th style={{ width: '100px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -513,9 +643,27 @@ function UserManagementView({ auth }) {
                       </span>
                     </td>
                     <td>
-                      <span className={`alt-badge ${user.is_active === 1 ? 'badge-resolved' : 'badge-closed'}`}>
-                        {user.is_active === 1 ? 'Active' : 'Inactive'}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span className={`alt-badge ${user.is_active === 1 ? 'badge-resolved' : 'badge-closed'}`}>
+                          {user.is_active === 1 ? 'Active' : 'Inactive'}
+                        </span>
+                        <button
+                          onClick={() => handleToggleStatus(user)}
+                          style={{
+                            padding: '2px 6px',
+                            fontSize: '10px',
+                            background: user.is_active === 1 ? '#FEF2F2' : '#DCFCE7',
+                            color: user.is_active === 1 ? '#DC2626' : '#166534',
+                            border: '1px solid',
+                            borderColor: user.is_active === 1 ? '#FECACA' : '#BBF7D0',
+                            borderRadius: '4px',
+                            cursor: 'pointer'
+                          }}
+                          title={user.is_active === 1 ? 'Deactivate user' : 'Activate user'}
+                        >
+                          {user.is_active === 1 ? 'Deactivate' : 'Activate'}
+                        </button>
+                      </div>
                     </td>
                     <td>
                       <span style={{ fontSize: '12px', color: '#94A3B8' }}>
@@ -524,13 +672,71 @@ function UserManagementView({ auth }) {
                     </td>
                     <td><span style={{ fontSize: '12px', color: '#94A3B8' }}>{formatBusinessDate(user.created_at)}</span></td>
                     <td>
-                      <div className="flex gap-2">
-                        <button className="alt-icon-btn" title="Edit">
+                      <div className="flex gap-2" style={{ position: 'relative' }}>
+                        <button 
+                          className="alt-icon-btn" 
+                          title="Edit User"
+                          onClick={() => handleEditUser(user)}
+                        >
                           <Edit size={16} />
                         </button>
-                        <button className="alt-icon-btn" title="More options">
+                        <button 
+                          className="alt-icon-btn" 
+                          title="More options"
+                          onClick={() => setShowMoreOptions(showMoreOptions === user.id ? null : user.id)}
+                        >
                           <MoreHorizontal size={16} />
                         </button>
+                        
+                        {showMoreOptions === user.id && (
+                          <div style={{
+                            position: 'absolute',
+                            top: '100%',
+                            right: 0,
+                            background: 'white',
+                            border: '1px solid #E2E8F0',
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            zIndex: 10,
+                            minWidth: '180px'
+                          }}>
+                            <button
+                              className="dropdown-item"
+                              onClick={() => {
+                                handleResetPassword(user);
+                                setShowMoreOptions(null);
+                              }}
+                            >
+                              <Key size={14} style={{ marginRight: '8px' }} />
+                              Reset Password
+                            </button>
+                            <button
+                              className="dropdown-item"
+                              onClick={() => {
+                                handleViewActivity(user);
+                                setShowMoreOptions(null);
+                              }}
+                            >
+                              <Activity size={14} style={{ marginRight: '8px' }} />
+                              View Activity
+                            </button>
+                            <div style={{ borderTop: '1px solid #E2E8F0', margin: '4px 0' }}></div>
+                            <button
+                              className="dropdown-item"
+                              onClick={() => {
+                                if (window.confirm(`Delete user ${user.name}? This action cannot be undone.`)) {
+                                  // Add delete functionality here
+                                  alert("Delete functionality to be implemented");
+                                }
+                                setShowMoreOptions(null);
+                              }}
+                              style={{ color: '#DC2626' }}
+                            >
+                              <Trash2 size={14} style={{ marginRight: '8px' }} />
+                              Delete User
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -553,6 +759,7 @@ function UserManagementView({ auth }) {
         </div>
       )}
 
+      {/* Create User Modal (existing) */}
       <ModalOverlay isOpen={showCreate} onClose={() => setShowCreate(false)} title="Create New User Identity">
         <form onSubmit={handleCreateUser}>
           <div className="alt-input-group">
@@ -632,6 +839,256 @@ function UserManagementView({ auth }) {
             </ActionButton>
           </div>
         </form>
+      </ModalOverlay>
+
+      {/* Edit User Modal */}
+      <ModalOverlay isOpen={showEditUser} onClose={() => setShowEditUser(false)} title="Edit User Details">
+        {selectedUser && (
+          <div>
+            <div className="alt-input-group">
+              <label className="alt-label">Full Name</label>
+              <input 
+                type="text" 
+                className="alt-input" 
+                value={editFormData.name}
+                onChange={e => setEditFormData({...editFormData, name: e.target.value})}
+                placeholder="User full name"
+              />
+            </div>
+            <div className="alt-input-group">
+              <label className="alt-label">Email</label>
+              <input 
+                type="email" 
+                className="alt-input" 
+                value={selectedUser.email}
+                disabled
+                style={{ background: '#F8FAFC', color: '#64748B' }}
+              />
+              <p style={{ fontSize: '10px', color: '#94A3B8', marginTop: '6px' }}>
+                Email cannot be changed
+              </p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div className="alt-input-group">
+                <label className="alt-label">Department</label>
+                <select 
+                  className="alt-select" 
+                  value={editFormData.department}
+                  onChange={e => setEditFormData({...editFormData, department: e.target.value})}
+                >
+                  <option value="">Select department</option>
+                  <option>Operations</option>
+                  <option>HR</option>
+                  <option>IT Department</option>
+                  <option>Sales Department</option>
+                  <option>Management</option>
+                </select>
+              </div>
+              <div className="alt-input-group">
+                <label className="alt-label">Role</label>
+                <select 
+                  className="alt-select" 
+                  value={editFormData.role}
+                  onChange={e => setEditFormData({...editFormData, role: e.target.value})}
+                >
+                  <option value="user">Standard User</option>
+                  <option value="it_admin">IT Administrator</option>
+                </select>
+              </div>
+            </div>
+            <div className="alt-input-group">
+              <label className="alt-label">Phone Number</label>
+              <input 
+                type="tel" 
+                className="alt-input" 
+                value={editFormData.phone}
+                onChange={e => setEditFormData({...editFormData, phone: e.target.value})}
+                placeholder="+27 11 123 4567"
+              />
+            </div>
+            <div className="flex gap-3 mt-8">
+              <ActionButton 
+                variant="secondary" 
+                className="flex-1" 
+                onClick={() => setShowEditUser(false)}
+                disabled={loading}
+              >
+                Cancel
+              </ActionButton>
+              <ActionButton 
+                variant="primary" 
+                className="flex-1" 
+                loading={loading} 
+                icon={UserCheck}
+                onClick={handleSaveEdit}
+              >
+                Save Changes
+              </ActionButton>
+            </div>
+          </div>
+        )}
+      </ModalOverlay>
+
+      {/* Reset Password Modal */}
+      <ModalOverlay isOpen={showPasswordModal} onClose={() => setShowPasswordModal(false)} title="Reset User Password">
+        {selectedUser && (
+          <div>
+            <div style={{ marginBottom: '20px', padding: '16px', background: '#F8FAFC', borderRadius: '8px' }}>
+              <p style={{ fontWeight: 600, marginBottom: '4px' }}>User: {selectedUser.name}</p>
+              <p style={{ fontSize: '12px', color: '#64748B' }}>{selectedUser.email}</p>
+            </div>
+            <div className="alt-input-group">
+              <label className="alt-label">New Password</label>
+              <input 
+                type="password" 
+                className="alt-input" 
+                value={passwordFormData.new_password}
+                onChange={e => setPasswordFormData({...passwordFormData, new_password: e.target.value})}
+                placeholder="Enter new password"
+              />
+            </div>
+            <div className="alt-input-group">
+              <label className="alt-label">Confirm Password</label>
+              <input 
+                type="password" 
+                className="alt-input" 
+                value={passwordFormData.confirm_password}
+                onChange={e => setPasswordFormData({...passwordFormData, confirm_password: e.target.value})}
+                placeholder="Confirm new password"
+              />
+            </div>
+            <div style={{ 
+              marginTop: '16px', 
+              padding: '12px', 
+              background: '#FEF3C7', 
+              borderRadius: '8px',
+              borderLeft: '4px solid #F59E0B'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                <AlertCircle size={16} color="#D97706" />
+                <p style={{ fontSize: '12px', color: '#92400E' }}>
+                  <strong>Security Note:</strong> The user will be forced to change this password on their next login.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-8">
+              <ActionButton 
+                variant="secondary" 
+                className="flex-1" 
+                onClick={() => setShowPasswordModal(false)}
+                disabled={loading}
+              >
+                Cancel
+              </ActionButton>
+              <ActionButton 
+                variant="primary" 
+                className="flex-1" 
+                loading={loading} 
+                icon={Key}
+                onClick={handleSavePassword}
+              >
+                Reset Password
+              </ActionButton>
+            </div>
+          </div>
+        )}
+      </ModalOverlay>
+
+      {/* User Activity Modal */}
+      <ModalOverlay isOpen={showActivityModal} onClose={() => setShowActivityModal(false)} title="User Activity Log">
+        {selectedUser && (
+          <div>
+            <div style={{ marginBottom: '20px', padding: '16px', background: '#F8FAFC', borderRadius: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '8px',
+                  background: selectedUser.avatar_color || '#CBD5E1',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'white',
+                  fontWeight: 800
+                }}>
+                  {generateInitials(selectedUser.name)}
+                </div>
+                <div>
+                  <p style={{ fontWeight: 700 }}>{selectedUser.name}</p>
+                  <p style={{ fontSize: '12px', color: '#64748B' }}>{selectedUser.email}</p>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <p style={{ fontSize: '12px', fontWeight: 600, color: '#64748B' }}>
+                Total Activities: {userActivities.length}
+              </p>
+            </div>
+
+            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              {userActivities.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px' }}>
+                  <Activity size={32} color="#CBD5E1" style={{ margin: '0 auto 16px' }} />
+                  <p style={{ color: '#64748B', fontWeight: 600 }}>No activity recorded</p>
+                  <p style={{ fontSize: '12px', color: '#94A3B8', marginTop: '8px' }}>
+                    This user has no recorded activities yet
+                  </p>
+                </div>
+              ) : (
+                userActivities.map((activity, index) => (
+                  <div 
+                    key={index} 
+                    style={{
+                      padding: '16px',
+                      borderBottom: '1px solid #E2E8F0',
+                      background: index % 2 === 0 ? '#FFFFFF' : '#F8FAFC'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#3B82F6' }}>
+                        {activity.action.replace(/_/g, ' ')}
+                      </span>
+                      <span style={{ fontSize: '11px', color: '#94A3B8' }}>
+                        {formatBusinessDate(activity.created_at)}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '12px', color: '#334155', marginBottom: '4px' }}>
+                      {activity.details || 'No details provided'}
+                    </p>
+                    {activity.performed_by_name && (
+                      <p style={{ fontSize: '11px', color: '#64748B' }}>
+                        Performed by: {activity.performed_by_name}
+                      </p>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="flex gap-3 mt-8">
+              <ActionButton 
+                variant="secondary" 
+                className="flex-1" 
+                onClick={() => setShowActivityModal(false)}
+                disabled={loading}
+              >
+                Close
+              </ActionButton>
+              <ActionButton 
+                variant="primary" 
+                className="flex-1" 
+                icon={Download}
+                onClick={() => {
+                  // Export activity functionality
+                  alert("Export functionality to be implemented");
+                }}
+              >
+                Export Log
+              </ActionButton>
+            </div>
+          </div>
+        )}
       </ModalOverlay>
     </div>
   );
