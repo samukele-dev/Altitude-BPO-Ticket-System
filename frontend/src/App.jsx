@@ -1095,7 +1095,7 @@ function UserManagementView({ auth }) {
 }
 
 // =============================================================================
-// MODULE: TICKET DETAILS - WITH RESIGNATION INFORMATION
+// MODULE: TICKET DETAILS - FIXED ONBOARDING DISPLAY
 // =============================================================================
 function TicketDetailView({ auth, ticket, onBack }) {
   const [comments, setComments] = useState([]);
@@ -1127,14 +1127,45 @@ function TicketDetailView({ auth, ticket, onBack }) {
     }
   }, [fetchComments, ticket?.id]);
 
-  // Check if this is a resignation ticket
+  // Check ticket categories
   const isResignationTicket = ticket?.category === 'Resignation';
+  const isOnboardingTicket = ticket?.category === 'Onboarding';
   
   // Device information structure for resignation tickets
-  const deviceInfo = ticket?.device_details || {
+  const deviceInfo = {
     device_name: ticket?.device_name || 'Not specified',
     device_brand: ticket?.device_brand || 'Not specified',
     device_period: ticket?.device_period || 'Not specified'
+  };
+
+  // Onboarding information structure - DIRECT FIELDS ONLY
+  const onboardingInfo = {
+    campaign: ticket?.campaign || 'Not specified',
+    number_of_agents: ticket?.number_of_agents || 'Not specified',
+    start_date: ticket?.start_date || 'Not specified',
+    training_period: ticket?.training_period || 'Not specified'
+  };
+
+  console.log('Ticket Data:', ticket); // Debug log
+  console.log('Onboarding Info:', onboardingInfo); // Debug log
+
+  // Format date function for display
+  const formatDate = (dateString) => {
+    if (!dateString || dateString === 'Not specified' || dateString === '') return 'Not specified';
+    try {
+      const date = new Date(dateString);
+      // Check if date is valid
+      if (isNaN(date.getTime())) return 'Not specified';
+      
+      return date.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
+    } catch (e) {
+      console.error('Date formatting error:', e);
+      return 'Not specified';
+    }
   };
 
   const handlePost = async (e) => {
@@ -1331,6 +1362,21 @@ function TicketDetailView({ auth, ticket, onBack }) {
                     Resignation
                   </span>
                 )}
+                {isOnboardingTicket && (
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    color: '#3B82F6',
+                    background: '#DBEAFE',
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    <UserPlus size={12} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
+                    Onboarding
+                  </span>
+                )}
               </div>
               <p style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{ticket?.title}</p>
           </div>
@@ -1424,6 +1470,63 @@ function TicketDetailView({ auth, ticket, onBack }) {
                  </div>
                )}
 
+                {/* ONBOARDING SPECIFIC INFORMATION - FIXED */}
+               {isOnboardingTicket && (
+                 <div style={{ 
+                   marginBottom: '24px', 
+                   padding: '20px', 
+                   background: '#EFF6FF', 
+                   borderRadius: '12px',
+                   border: '1px solid #BFDBFE'
+                 }}>
+                   <div style={{ 
+                     display: 'flex', 
+                     alignItems: 'center', 
+                     gap: '12px', 
+                     marginBottom: '16px' 
+                   }}>
+                     <UserPlus size={20} color="#3B82F6" />
+                     <h4 style={{ fontSize: '16px', fontWeight: 800, color: '#3B82F6' }}>Onboarding Details</h4>
+                   </div>
+                   
+                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
+                     <div>
+                       <p style={{ fontSize: '12px', color: '#64748B', fontWeight: 600, marginBottom: '4px' }}>Campaign</p>
+                       <p style={{ fontSize: '14px', fontWeight: 700, color: '#1E293B' }}>{onboardingInfo.campaign}</p>
+                     </div>
+                     <div>
+                       <p style={{ fontSize: '12px', color: '#64748B', fontWeight: 600, marginBottom: '4px' }}>Number of Agents</p>
+                       <p style={{ fontSize: '14px', fontWeight: 700, color: '#1E293B' }}>{onboardingInfo.number_of_agents}</p>
+                     </div>
+                     <div>
+                       <p style={{ fontSize: '12px', color: '#64748B', fontWeight: 600, marginBottom: '4px' }}>Start Date</p>
+                       <p style={{ fontSize: '14px', fontWeight: 700, color: '#1E293B' }}>
+                         {formatDate(onboardingInfo.start_date)}
+                       </p>
+                     </div>
+                     <div>
+                       <p style={{ fontSize: '12px', color: '#64748B', fontWeight: 600, marginBottom: '4px' }}>Training Period</p>
+                       <p style={{ fontSize: '14px', fontWeight: 700, color: '#1E293B' }}>{onboardingInfo.training_period}</p>
+                     </div>
+                   </div>
+                   
+                   <div style={{ 
+                     marginTop: '16px', 
+                     padding: '12px', 
+                     background: '#DBEAFE', 
+                     borderRadius: '8px',
+                     borderLeft: '4px solid #3B82F6'
+                   }}>
+                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                       <Info size={16} color="#3B82F6" />
+                       <p style={{ fontSize: '12px', color: '#1E40AF' }}>
+                         <strong>IT Action Required:</strong> Please prepare equipment and access for {onboardingInfo.number_of_agents} agents for the {onboardingInfo.campaign} campaign starting {formatDate(onboardingInfo.start_date)}.
+                       </p>
+                     </div>
+                   </div>
+                 </div>
+               )}
+
                <div style={{ fontSize: '15px', lineHeight: 1.8, color: '#334155' }}>{ticket?.description}</div>
             </div>
 
@@ -1450,7 +1553,9 @@ function TicketDetailView({ auth, ticket, onBack }) {
                          placeholder={
                            isResignationTicket 
                              ? "Update on device collection status or HR coordination..." 
-                             : "Reply ticket on the progress..."
+                             : isOnboardingTicket
+                             ? "Update on onboarding progress, equipment readiness, or training status..."
+                             : "Reply to ticket on the progress..."
                          }
                          style={{ resize: 'none' }}
                          disabled={loading}
@@ -1471,7 +1576,7 @@ function TicketDetailView({ auth, ticket, onBack }) {
                            loading={loading}
                            type="submit"
                          >
-                           Reply ticket
+                           Reply to ticket
                          </ActionButton>
                       </div>
                    </form>
@@ -1508,14 +1613,20 @@ function TicketDetailView({ auth, ticket, onBack }) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span>{ticket?.category}</span>
                       {isResignationTicket && <ShieldAlert size={14} color="#DC2626" />}
+                      {isOnboardingTicket && <UserPlus size={14} color="#3B82F6" />}
                     </div>
                   } />
+                  
+                  <MetaRow label="Campaign" value={ticket?.campaign || 'Not specified'} />
+                  <MetaRow label="Number of Agents" value={ticket?.number_of_agents || 'Not specified'} />
+                  <MetaRow label="Start Date" value={formatDate(ticket?.start_date)} />
+                  <MetaRow label="Training Period" value={ticket?.training_period || 'Not specified'} />
                   <MetaRow label="Assigned To" value="IT Support" />
                   <MetaRow label="Contact" value={ticket?.requester_email} />
                   <MetaRow label="Ticket ID" value={`#INC-${ticket?.id}`} />
                   <MetaRow label="Created" value={formatBusinessDate(ticket?.created_at)} />
                   
-                  {/* Additional resignation-specific metadata */}
+                  {/* Resignation details */}
                   {isResignationTicket && (
                     <>
                       <div style={{ marginTop: '8px', paddingTop: '16px', borderTop: '1px solid #E2E8F0' }}>
@@ -1523,6 +1634,19 @@ function TicketDetailView({ auth, ticket, onBack }) {
                         <MetaRow label="Device" value={deviceInfo.device_name} />
                         <MetaRow label="Brand" value={deviceInfo.device_brand} />
                         <MetaRow label="Usage" value={deviceInfo.device_period} />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Onboarding details - FIXED */}
+                  {isOnboardingTicket && (
+                    <>
+                      <div style={{ marginTop: '8px', paddingTop: '16px', borderTop: '1px solid #E2E8F0' }}>
+                        <p style={{ fontSize: '11px', fontWeight: 800, color: '#3B82F6', textTransform: 'uppercase', marginBottom: '12px' }}>Onboarding Details</p>
+                        <MetaRow label="Campaign" value={onboardingInfo.campaign} />
+                        <MetaRow label="Agents" value={onboardingInfo.number_of_agents} />
+                        <MetaRow label="Start Date" value={formatDate(onboardingInfo.start_date)} />
+                        <MetaRow label="Training" value={onboardingInfo.training_period} />
                       </div>
                     </>
                   )}
@@ -1534,6 +1658,8 @@ function TicketDetailView({ auth, ticket, onBack }) {
                <p style={{ fontSize: '12px', color: '#64748B', lineHeight: '1.5', marginBottom: '16px' }}>
                  {isResignationTicket 
                    ? "Closing this resignation ticket will notify HR and IT for final clearance."
+                   : isOnboardingTicket
+                   ? "Closing this onboarding ticket will confirm all agents have been set up successfully."
                    : "Closing this ticket will notify the user. All history is archived."
                  }
                </p>
@@ -1573,46 +1699,25 @@ function TicketDetailView({ auth, ticket, onBack }) {
                    </div>
                  </div>
                )}
+
+               {/* Special note for onboarding tickets */}
+               {isOnboardingTicket && ticket?.status !== 'Closed' && ticket?.status !== 'Resolved' && (
+                 <div style={{ 
+                   marginTop: '16px', 
+                   padding: '12px', 
+                   background: '#DBEAFE', 
+                   borderRadius: '8px',
+                   border: '1px solid #BFDBFE'
+                 }}>
+                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                     <Info size={14} color="#3B82F6" />
+                     <p style={{ fontSize: '11px', color: '#1E40AF', lineHeight: '1.4' }}>
+                       <strong>Note:</strong> Ensure all agents have been onboarded and have access before resolving this ticket.
+                     </p>
+                   </div>
+                 </div>
+               )}
             </div>
-            
-            
-            {/* HR Coordination Section for Resignation Tickets 
-            {isResignationTicket && (
-              <div className="alt-card" style={{ 
-                padding: '24px', 
-                background: '#FFF7ED',
-                border: '1px solid #FDBA74'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                  <Users size={20} color="#F97316" />
-                  <h4 className="alt-card-title" style={{ color: '#F97316' }}>HR Coordination Required</h4>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <ActionButton 
-                    variant="secondary" 
-                    icon={Mail}
-                    onClick={() => setForwardEmail('hr@altitudebpo.com')}
-                    style={{ justifyContent: 'flex-start' }}
-                  >
-                    Notify HR Department
-                  </ActionButton>
-                  <ActionButton 
-                    variant="secondary" 
-                    icon={FileText}
-                    style={{ justifyContent: 'flex-start' }}
-                  >
-                    Generate Exit Checklist
-                  </ActionButton>
-                  <ActionButton 
-                    variant="secondary" 
-                    icon={Calendar}
-                    style={{ justifyContent: 'flex-start' }}
-                  >
-                    Schedule Exit Interview
-                  </ActionButton>
-                </div>
-              </div>
-            )} */}
          </div>
       </div>
 
@@ -1631,11 +1736,16 @@ function TicketDetailView({ auth, ticket, onBack }) {
               required 
               value={forwardEmail}
               onChange={(e) => setForwardEmail(e.target.value)}
-              placeholder={isResignationTicket ? "hr@altitudebpo.com" : "recipient@altitudebpo.com"}
+              placeholder={isResignationTicket ? "hr@altitudebpo.com" : isOnboardingTicket ? "it-team@altitudebpo.com" : "recipient@altitudebpo.com"}
             />
             {isResignationTicket && (
               <p style={{ fontSize: '10px', color: '#F97316', marginTop: '6px', fontWeight: 600 }}>
                 Suggested: Forward to HR department for exit process coordination
+              </p>
+            )}
+            {isOnboardingTicket && (
+              <p style={{ fontSize: '10px', color: '#3B82F6', marginTop: '6px', fontWeight: 600 }}>
+                Suggested: Forward to IT team for equipment preparation
               </p>
             )}
           </div>
@@ -1649,6 +1759,8 @@ function TicketDetailView({ auth, ticket, onBack }) {
               placeholder={
                 isResignationTicket 
                   ? "This resignation requires HR coordination for exit process and device return..."
+                  : isOnboardingTicket
+                  ? `Please prepare equipment for ${onboardingInfo.number_of_agents} agents for the ${onboardingInfo.campaign} campaign starting ${formatDate(onboardingInfo.start_date)}...`
                   : "Add a note about why you're forwarding this ticket..."
               }
               style={{ resize: 'none' }}
@@ -1665,6 +1777,14 @@ function TicketDetailView({ auth, ticket, onBack }) {
                   <p>Device: {deviceInfo.device_name}</p>
                   <p>Brand: {deviceInfo.device_brand}</p>
                   <p>Usage: {deviceInfo.device_period}</p>
+                </>
+              )}
+              {isOnboardingTicket && (
+                <>
+                  <p>Campaign: {onboardingInfo.campaign}</p>
+                  <p>Agents: {onboardingInfo.number_of_agents}</p>
+                  <p>Start Date: {formatDate(onboardingInfo.start_date)}</p>
+                  <p>Training: {onboardingInfo.training_period}</p>
                 </>
               )}
             </div>
@@ -1697,6 +1817,8 @@ function TicketDetailView({ auth, ticket, onBack }) {
     </div>
   );
 }
+
+
 
 // -----------------------------------------------------------------------------
 const MetaRow = ({ label, value, color }) => (
@@ -1916,9 +2038,6 @@ function TicketsListView({ auth, onSelectTicket }) {
 // =============================================================================
 // MODULE: CREATE TICKET
 // =============================================================================
-// =============================================================================
-// MODULE: CREATE TICKET
-// =============================================================================
 function CreateTicketView({ auth, onDone }) {
   const [formData, setFormData] = useState({ 
     title: '', 
@@ -1927,7 +2046,11 @@ function CreateTicketView({ auth, onDone }) {
     description: '',
     device_name: '',
     device_brand: '',
-    device_period: ''
+    device_period: '',
+    start_date: '',
+    training_period: '',
+    number_of_agents: '',
+    campaign: ''
   });
   const [loading, setLoading] = useState(false);
 
@@ -1935,20 +2058,40 @@ function CreateTicketView({ auth, onDone }) {
     e.preventDefault();
     setLoading(true);
     try {
-      // Include device details in the ticket data for resignation category
+      // Base ticket data - FLAT STRUCTURE for backend
       const ticketData = {
-        title: formData.title,
         category: formData.category,
         priority: formData.priority,
-        description: formData.description
+        description: formData.description,
+        requester_name: auth.user.name,
+        requester_email: auth.user.email
       };
       
-      // Add device details if category is Resignation
+      // Only include title for non-Onboarding tickets
+      if (formData.category !== 'Onboarding') {
+        ticketData.title = formData.title;
+      } else {
+        // For onboarding tickets, set a default title or leave it out
+        // Since your backend requires title, we'll set a default
+        ticketData.title = `Onboarding Request - ${formData.campaign || 'New Campaign'}`;
+      }
+      
+      // Add specific fields based on category - FLAT STRUCTURE, NOT NESTED
       if (formData.category === 'Resignation') {
         ticketData.device_name = formData.device_name;
         ticketData.device_brand = formData.device_brand;
         ticketData.device_period = formData.device_period;
       }
+
+      if (formData.category === 'Onboarding') {
+        // Send these as FLAT fields, not nested inside onboarding_details
+        ticketData.campaign = formData.campaign;
+        ticketData.number_of_agents = formData.number_of_agents;
+        ticketData.start_date = formData.start_date;
+        ticketData.training_period = formData.training_period;
+      }
+      
+      console.log('Submitting ticket data:', ticketData);
       
       await axios.post(`${API_BASE}/tickets`, ticketData, { 
         headers: { Authorization: `Bearer ${auth.token}` } 
@@ -1956,6 +2099,7 @@ function CreateTicketView({ auth, onDone }) {
       alert("Ticket created successfully!");
       onDone();
     } catch (err) { 
+      console.error('Submission error:', err);
       alert(err.response?.data?.error || "Submission failed"); 
     }
     finally { setLoading(false); }
@@ -1968,20 +2112,26 @@ function CreateTicketView({ auth, onDone }) {
       
       <div className="alt-card" style={{ padding: '40px' }}>
         <form onSubmit={handleSubmit}>
-          <div className="alt-input-group">
-            <label className="alt-label">Name & Surname of Agent</label>
-            <input 
-              className="alt-input" 
-              required 
-              value={formData.title} 
-              onChange={e => setFormData({...formData, title: e.target.value})} 
-              placeholder="Agent details..." 
-            />
-          </div>
+          {/* Name & Surname of Agent - Conditionally hidden for Onboarding */}
+          {formData.category !== 'Onboarding' && (
+            <div className="alt-input-group">
+              <label className="alt-label">
+                Name & Surname of Agent 
+                <span className="text-danger"> *</span>
+              </label>
+              <input 
+                className="alt-input" 
+                required 
+                value={formData.title} 
+                onChange={e => setFormData({...formData, title: e.target.value})} 
+                placeholder="Agent details..." 
+              />
+            </div>
+          )}
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             <div className="alt-input-group">
-              <label className="alt-label">Category</label>
+              <label className="alt-label">Category <span className="text-danger">*</span></label>
               <select 
                 className="alt-select" 
                 required 
@@ -1992,12 +2142,13 @@ function CreateTicketView({ auth, onDone }) {
                 <option>Software</option>
                 <option>Network</option>
                 <option>Resignation</option>
+                <option>Onboarding</option>
                 <option>Access/Security</option>
                 <option>General</option>
               </select>
             </div>
             <div className="alt-input-group">
-              <label className="alt-label">Business Urgency</label>
+              <label className="alt-label">Business Urgency <span className="text-danger">*</span></label>
               <select 
                 className="alt-select" 
                 required 
@@ -2012,7 +2163,7 @@ function CreateTicketView({ auth, onDone }) {
             </div>
           </div>
 
-          {/* Device Details Section - Only shown for Resignation category */}
+          {/* Resignation Section */}
           {formData.category === 'Resignation' && (
             <div style={{ 
               margin: '24px 0', 
@@ -2033,7 +2184,7 @@ function CreateTicketView({ auth, onDone }) {
               
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
                 <div className="alt-input-group">
-                  <label className="alt-label">Device Name *</label>
+                  <label className="alt-label">Device Name <span className="text-danger">*</span></label>
                   <select 
                     className="alt-select" 
                     required={formData.category === 'Resignation'}
@@ -2042,10 +2193,10 @@ function CreateTicketView({ auth, onDone }) {
                   >
                     <option value="">Select device</option>
                     <option value="Laptop">Laptop Only</option>
-                    <option value="Headset">Laptop, Charger & Headset</option>
-                    <option value="Desktop">Laptop collected by IT</option>
-                    <option value="Monitor">All equipment with IT</option>
-                    <option value="Mobile Phone">Desktop</option>
+                    <option value="Laptop, Charger & Headset">Laptop, Charger & Headset</option>
+                    <option value="Laptop collected by IT">Laptop collected by IT</option>
+                    <option value="All equipment with IT">All equipment with IT</option>
+                    <option value="Desktop">Desktop</option>
                     <option value="Other">Other</option>
                   </select>
                 </div>
@@ -2061,15 +2212,13 @@ function CreateTicketView({ auth, onDone }) {
                     <option value="Dell">Dell</option>
                     <option value="HP">HP</option>
                     <option value="Lenovo">Lenovo</option>
-                    <option value="Jabra">Asus</option>
-                    <option value="Samsung">Huawei</option>
+                    <option value="Asus">Asus</option>
+                    <option value="Huawei">Huawei</option>
                     <option value="Other">Other</option>
                   </select>
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
-              
               <div className="alt-input-group">
                 <label className="alt-label">Period Device Used</label>
                 <select 
@@ -2084,7 +2233,6 @@ function CreateTicketView({ auth, onDone }) {
                   <option value="2-3 years">2-3 years</option>
                   <option value="More than 3 years">More than 3 years</option>
                 </select>
-              </div>
               </div>
               
               <div style={{ 
@@ -2105,8 +2253,114 @@ function CreateTicketView({ auth, onDone }) {
             </div>
           )}
 
+          {/* Onboarding Section - FIXED */}
+          {formData.category === 'Onboarding' && (
+            <div style={{ 
+              margin: '24px 0', 
+              padding: '24px', 
+              background: '#F8FAFC', 
+              borderRadius: '12px',
+              border: '1px solid #E2E8F0'
+            }}>
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '12px', 
+                marginBottom: '20px' 
+              }}>
+                <UserPlus size={20} color="#3B82F6" />
+                <h4 style={{ fontSize: '16px', fontWeight: 800, color: '#1E293B' }}>Onboarding Details</h4>
+              </div>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
+                <div className="alt-input-group">
+                  <label className="alt-label">Campaign <span className="text-danger">*</span></label>
+                  <select 
+                    className="alt-select" 
+                    required={formData.category === 'Onboarding'}
+                    value={formData.campaign} 
+                    onChange={e => setFormData({...formData, campaign: e.target.value})}
+                  >
+                    <option value="">Select Campaign</option>
+                    <option value="Vodacom Funeral">Vodacom Funeral</option>
+                    <option value="Vodacom Device">Vodacom Device</option>
+                    <option value="Vodacom Life">Vodacom Life</option>
+                    <option value="Telkom LTE">Telkom LTE</option>
+                    <option value="Telkom Migrations">Telkom Migrations</option>
+                    <option value="Clientel Perks">Clientel Perks</option>
+                    <option value="Hollard">Hollard</option>
+                    <option value="Absa">Absa</option>
+                    <option value="IEC">IEC</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                <div className="alt-input-group">
+                  <label className="alt-label">Number of Agents Onboarding <span className="text-danger">*</span></label>
+                  <input 
+                    type="number"
+                    className="alt-input" 
+                    required 
+                    value={formData.number_of_agents} 
+                    onChange={e => setFormData({...formData, number_of_agents: e.target.value})} 
+                    placeholder="e.g., 15" 
+                    min="1"
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
+                <div className="alt-input-group">
+                  <label className="alt-label">Start Date <span className="text-danger">*</span></label>
+                  <input
+                    type="date" 
+                    className="alt-input"
+                    required={formData.category === 'Onboarding'}
+                    value={formData.start_date} 
+                    onChange={e => setFormData({...formData, start_date: e.target.value})}
+                    min={new Date().toISOString().split('T')[0]}
+                  />
+                </div>
+
+                <div className="alt-input-group">
+                  <label className="alt-label">Training Period <span className="text-danger">*</span></label>
+                  <select 
+                    className="alt-select" 
+                    required={formData.category === 'Onboarding'}
+                    value={formData.training_period} 
+                    onChange={e => setFormData({...formData, training_period: e.target.value})}
+                  >
+                    <option value="">Select training period</option>
+                    <option value="1 Week">1 Week</option>
+                    <option value="2 Weeks">2 Weeks</option>
+                    <option value="3 Weeks">3 Weeks</option>
+                    <option value="4 Weeks">4 Weeks</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div style={{ 
+                marginTop: '16px', 
+                padding: '12px', 
+                background: '#EFF6FF', 
+                borderRadius: '8px',
+                borderLeft: '4px solid #3B82F6'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                  <Info size={16} color="#3B82F6" />
+                  <p style={{ fontSize: '12px', color: '#1E40AF' }}>
+                    <strong>Note:</strong> IT onboarding tickets are for enrolling new agents into campaigns. Please ensure all training and onboarding requirements are met before submission.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="alt-input-group">
-            <label className="alt-label">Describe issue in detail</label>
+            <label className="alt-label">
+              Describe issue in detail 
+              <span className="text-danger"> *</span>
+            </label>
             <textarea 
               className="alt-input" 
               rows="8" 
@@ -2116,6 +2370,8 @@ function CreateTicketView({ auth, onDone }) {
               placeholder={
                 formData.category === 'Resignation' 
                   ? "Please provide resignation details, last working day, and any other relevant information..." 
+                  : formData.category === 'Onboarding'
+                  ? "Provide additional onboarding requirements, special instructions, or equipment needs..."
                   : "Provide technical details, error codes, and steps to reproduce..."
               }
             />

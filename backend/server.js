@@ -327,7 +327,46 @@ function addDeviceColumnsToTickets() {
       console.log('Adding device_period column to tickets table');
       db.exec("ALTER TABLE tickets ADD COLUMN device_period TEXT");
     }
+
+    // Add onboarding if it doesn't exist
+    const hasOnboarding = tableInfo.some(column => column.name === 'onboarding');
+    if (!hasOnboarding) {
+      console.log('Adding onboarding column to tickets table');
+      db.exec("ALTER TABLE tickets ADD COLUMN onboarding TEXT");
+    }
+
+    // Add campaign if it doesn't exist
+    const hasCampaign = tableInfo.some(column => column.name === 'campaign');
+    if (!hasCampaign) {
+      console.log('Adding campaign column to tickets table');
+      db.exec("ALTER TABLE tickets ADD COLUMN campaign TEXT");
+    }
     
+    
+    // Add number_of_agents if it doesn't exist
+    const hasNumberOfAgents = tableInfo.some(column => column.name === 'number_of_agents');
+    if (!hasNumberOfAgents) {
+      console.log('Adding number_of_agents column to tickets table');
+      db.exec("ALTER TABLE tickets ADD COLUMN number_of_agents INTEGER DEFAULT 1");
+    }
+
+    // Add start_date if it doesn't exist
+    const hasStartDate= tableInfo.some(column => column.name === 'start_date');
+    if (!hasStartDate) {
+      console.log('Adding start_date column to tickets table');
+      db.exec("ALTER TABLE tickets ADD COLUMN start_date TEXT");
+    }
+
+    // Add training_period if it doesn't exist
+    const hasTrainingPeriod= tableInfo.some(column => column.name === 'training_period');
+    if (!hasTrainingPeriod) {
+      console.log('Adding training_period column to tickets table');
+      db.exec("ALTER TABLE tickets ADD COLUMN training_period TEXT");
+    }
+
+
+
+
     console.log('✅ Device columns added to tickets table');
     
   } catch (error) {
@@ -971,33 +1010,43 @@ app.get('/api/tickets/:id', authenticateToken, (req, res) => {
 // Ticket creation
 app.post('/api/tickets', authenticateToken, (req, res) => {
   try {
-    const { title, description, priority, category, device_name, device_brand, device_period } = req.body;
+    const { 
+      title, description, priority, category, 
+      device_name, device_brand, device_period, 
+      number_of_agents, training_period, start_date, campaign 
+    } = req.body;
+    
     if (!title || !description) return res.status(400).json({ error: 'Title and description are required' });
 
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + (priority === 'Critical' ? 1 : 7));
 
-    // Add new columns for device information
+    // IMPORTANT: The order of values MUST match the column order in the INSERT statement
     const result = db.prepare(`
       INSERT INTO tickets (
         uuid, title, description, priority, category, 
         user_id, due_date, tags, 
-        device_name, device_brand, device_period,  -- New columns
+        device_name, device_brand, device_period, 
+        number_of_agents, training_period, campaign, start_date,
         created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `).run(
-      generateUUID(), 
-      title, 
-      description, 
-      priority || 'Medium', 
-      category || 'General', 
-      req.user.id, 
-      dueDate.toISOString(),
-      category === 'Resignation' ? 'Resignation-Device-Return' : '',  // Simplified tags
-      device_name || null,
-      device_brand || null,
-      device_period || null
+      generateUUID(),                                      // uuid
+      title,                                               // title
+      description,                                         // description
+      priority || 'Medium',                                // priority
+      category || 'General',                               // category
+      req.user.id,                                         // user_id
+      dueDate.toISOString(),                               // due_date
+      category === 'Resignation' ? 'Resignation-Device-Return' : '',  // tags
+      device_name || null,                                 // device_name
+      device_brand || null,                                // device_brand
+      device_period || null,                               // device_period
+      number_of_agents || null,                            // number_of_agents
+      training_period || null,                             // training_period
+      campaign || null,                                    // campaign
+      start_date || null                                   // start_date
     );
 
     // Log the activity
@@ -1011,14 +1060,22 @@ app.post('/api/tickets', authenticateToken, (req, res) => {
       WHERE t.id = ?
     `).get(result.lastInsertRowid);
 
+    console.log('✅ Ticket created successfully:', {
+      id: newTicket.id,
+      campaign: newTicket.campaign,
+      number_of_agents: newTicket.number_of_agents,
+      start_date: newTicket.start_date,
+      training_period: newTicket.training_period
+    });
+
     res.status(201).json({ 
       success: true, 
       ticket: newTicket,
       message: 'Ticket created successfully'
     });
   } catch (error) {
-    console.error('Ticket creation error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('❌ Ticket creation error:', error);
+    res.status(500).json({ error: 'Internal server error: ' + error.message });
   }
 });
 
@@ -1102,7 +1159,7 @@ app.post('/api/tickets/:id/comments', authenticateToken, (req, res) => {
         
         // Get the newly created comment with user info
         const newComment = db.prepare(`
-            SELECT tc.*, u.name as user_name, u.role as user_role, u.avatar_color as user_avatar
+            SELECT tc.*, u.name as user_name, u.role as user_role, u.avatar_color as user_avatar, u.message as user_message
             FROM ticket_comments tc
             JOIN users u ON tc.user_id = u.id
             WHERE tc.id = ?
