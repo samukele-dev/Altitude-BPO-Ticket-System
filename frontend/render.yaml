@@ -7,4 +7,4 @@ services:
     staticPublishPath: dist  # Vite builds to 'dist', not 'build'
     envVars:
       - key: VITE_API_URL
-        value: https://your-backend-url.onrender.com/api
+        value: https://altitude-backend-0j55.onrender.com/api
