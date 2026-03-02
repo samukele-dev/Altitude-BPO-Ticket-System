@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Altitude BPO Ticketing System",
   "scripts": {
-    "start": "cd backend && node server.js",
+    "start": "cd backend && npm install && node server.js",
     "build": "cd frontend && npm install && npm run build",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
