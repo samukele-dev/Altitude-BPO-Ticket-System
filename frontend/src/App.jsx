@@ -9,6 +9,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import axios from 'axios';
 import './index.css';
 
+
 import { 
   LayoutDashboard, Users, PlusCircle, Ticket, LogOut, ShieldAlert, CheckCircle,
   Clock, MessageSquare, FileText, Bell, Search, ChevronRight, User, Mail,
@@ -21,7 +22,7 @@ import {
   UserCheck, ShieldCheck, MailWarning
 } from 'lucide-react';
 
-const API_BASE = "http://localhost:5000/api";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 // =============================================================================
 // GLOBAL UTILITIES
@@ -1095,21 +1096,26 @@ function UserManagementView({ auth }) {
 }
 
 // =============================================================================
-// MODULE: TICKET DETAILS - FIXED ONBOARDING DISPLAY
+// MODULE: TICKET DETAILS WITH TICKET LIST SIDEBAR
 // =============================================================================
 function TicketDetailView({ auth, ticket, onBack }) {
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
   const [loading, setLoading] = useState(true);
+  const [ticketsList, setTicketsList] = useState([]);
+  const [ticketsLoading, setTicketsLoading] = useState(true);
   const [showForwardModal, setShowForwardModal] = useState(false);
   const [forwardEmail, setForwardEmail] = useState('');
   const [forwardMessage, setForwardMessage] = useState('');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [selectedTicketId, setSelectedTicketId] = useState(ticket?.id);
+  const [currentTicket, setCurrentTicket] = useState(ticket);
   
   const fetchComments = useCallback(async () => {
     try {
       setLoading(true);
-      if (ticket?.id) {
-        const response = await axios.get(`${API_BASE}/tickets/${ticket.id}/comments`, {
+      if (selectedTicketId) {
+        const response = await axios.get(`${API_BASE}/tickets/${selectedTicketId}/comments`, {
           headers: { Authorization: `Bearer ${auth.token}` }
         });
         setComments(response.data);
@@ -1119,34 +1125,89 @@ function TicketDetailView({ auth, ticket, onBack }) {
     } finally {
       setLoading(false);
     }
-  }, [ticket?.id, auth.token]);
+  }, [selectedTicketId, auth.token]);
+
+  const fetchTicketDetails = useCallback(async (ticketId) => {
+    try {
+      setLoading(true);
+      const response = await axios.get(`${API_BASE}/tickets/${ticketId}`, {
+        headers: { Authorization: `Bearer ${auth.token}` }
+      });
+      
+      // Update the current ticket state
+      setCurrentTicket(response.data);
+      
+      // Fetch comments for the new ticket
+      await fetchComments();
+      
+    } catch (err) {
+      console.error("Error fetching ticket details:", err);
+      alert("Failed to load ticket details");
+    } finally {
+      setLoading(false);
+    }
+  }, [auth.token, fetchComments]);
+
+  const fetchTicketsList = useCallback(async () => {
+    try {
+      setTicketsLoading(true);
+      const response = await axios.get(`${API_BASE}/tickets`, {
+        headers: { Authorization: `Bearer ${auth.token}` }
+      });
+      // Filter out current ticket and limit to 10 most recent
+      const sortedTickets  = response.data
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        .slice(0, 5);
+      setTicketsList(sortedTickets);
+    } catch (err) {
+      console.error("Error fetching tickets list:", err);
+    } finally {
+      setTicketsLoading(false);
+    }
+  }, [auth.token, selectedTicketId]);
 
   useEffect(() => { 
-    if (ticket?.id) {
-      fetchComments(); 
+    if (selectedTicketId) {
+      fetchTicketDetails(selectedTicketId);
+      fetchTicketsList();
     }
-  }, [fetchComments, ticket?.id]);
+  }, [fetchTicketDetails, fetchTicketsList, selectedTicketId]);
+
+  // Update selectedTicketId when ticket prop changes
+  useEffect(() => {
+    if (ticket?.id) {
+      setSelectedTicketId(ticket.id);
+      setCurrentTicket(ticket);
+    }
+  }, [ticket?.id]);
+
+  const handleTicketSelect = (selectedTicket) => {
+    setSelectedTicketId(selectedTicket.id);
+    
+    // Scroll to top for better UX
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Check ticket categories
-  const isResignationTicket = ticket?.category === 'Resignation';
-  const isOnboardingTicket = ticket?.category === 'Onboarding';
+  const isResignationTicket = currentTicket?.category === 'Resignation';
+  const isOnboardingTicket = currentTicket?.category === 'Onboarding';
   
   // Device information structure for resignation tickets
   const deviceInfo = {
-    device_name: ticket?.device_name || 'Not specified',
-    device_brand: ticket?.device_brand || 'Not specified',
-    device_period: ticket?.device_period || 'Not specified'
+    device_name: currentTicket?.device_name || 'Not specified',
+    device_brand: currentTicket?.device_brand || 'Not specified',
+    device_period: currentTicket?.device_period || 'Not specified'
   };
 
   // Onboarding information structure - DIRECT FIELDS ONLY
   const onboardingInfo = {
-    campaign: ticket?.campaign || 'Not specified',
-    number_of_agents: ticket?.number_of_agents || 'Not specified',
-    start_date: ticket?.start_date || 'Not specified',
-    training_period: ticket?.training_period || 'Not specified'
+    campaign: currentTicket?.campaign || 'Not specified',
+    number_of_agents: currentTicket?.number_of_agents || 'Not specified',
+    start_date: currentTicket?.start_date || 'Not specified',
+    training_period: currentTicket?.training_period || 'Not specified'
   };
 
-  console.log('Ticket Data:', ticket); // Debug log
+  console.log('Current Ticket Data:', currentTicket); // Debug log
   console.log('Onboarding Info:', onboardingInfo); // Debug log
 
   // Format date function for display
@@ -1174,7 +1235,7 @@ function TicketDetailView({ auth, ticket, onBack }) {
     
     setLoading(true);
     try {
-      const response = await axios.post(`${API_BASE}/tickets/${ticket.id}/comments`, {
+      const response = await axios.post(`${API_BASE}/tickets/${selectedTicketId}/comments`, {
         content: newComment
       }, {
         headers: { Authorization: `Bearer ${auth.token}` }
@@ -1208,9 +1269,9 @@ function TicketDetailView({ auth, ticket, onBack }) {
 
     setLoading(true);
     try {
-      console.log(`IT Admin ${auth.user.name} attempting to resolve ticket ID: ${ticket.id}`);
+      console.log(`IT Admin ${auth.user.name} attempting to resolve ticket ID: ${selectedTicketId}`);
       
-      const response = await axios.put(`${API_BASE}/tickets/${ticket.id}`, {
+      const response = await axios.put(`${API_BASE}/tickets/${selectedTicketId}`, {
         status: 'Resolved',
         resolution_note: `Ticket resolved by IT Admin ${auth.user.name} on ${new Date().toLocaleString()}`
       }, {
@@ -1232,12 +1293,15 @@ function TicketDetailView({ auth, ticket, onBack }) {
       };
       
       setComments(prev => [...prev, resolutionComment]);
-      ticket.status = 'Resolved';
+      
+      // Update the current ticket status
+      setCurrentTicket(prev => ({ ...prev, status: 'Resolved' }));
       
       const successMessage = response.data?.message || 'Ticket resolved successfully!';
       alert(`✓ ${successMessage}`);
       
       fetchComments();
+      fetchTicketsList(); // Refresh the list to show updated status
       
     } catch (err) {
       console.error("Error closing ticket:", err);
@@ -1252,7 +1316,7 @@ function TicketDetailView({ auth, ticket, onBack }) {
         });
         
         if (err.response.status === 404) {
-          userErrorMessage = `Ticket ID ${ticket.id} not found on server`;
+          userErrorMessage = `Ticket ID ${selectedTicketId} not found on server`;
         } else if (err.response.status === 403) {
           userErrorMessage = "Permission denied. Check if you have IT admin privileges.";
         } else if (err.response.status === 400) {
@@ -1276,7 +1340,7 @@ function TicketDetailView({ auth, ticket, onBack }) {
             };
             
             setComments(prev => [...prev, resolutionComment]);
-            ticket.status = 'Resolved';
+            setCurrentTicket(prev => ({ ...prev, status: 'Resolved' }));
             alert("✓ Ticket marked as resolved locally. Please refresh or contact IT to sync with backend.");
             return;
           }
@@ -1303,16 +1367,16 @@ function TicketDetailView({ auth, ticket, onBack }) {
 
     setLoading(true);
     try {
-      const response = await axios.post(`${API_BASE}/tickets/${ticket.id}/forward`, {
+      const response = await axios.post(`${API_BASE}/tickets/${selectedTicketId}/forward`, {
         email: forwardEmail,
-        message: forwardMessage || `Ticket #INC-${ticket.id} forwarded to you for attention.`,
+        message: forwardMessage || `Ticket #INC-${selectedTicketId} forwarded to you for attention.`,
         forwarded_by: auth.user.name
       }, {
         headers: { Authorization: `Bearer ${auth.token}` }
       });
     
       if (response.data.emailSent) {
-        alert(`✓ Ticket #INC-${ticket.id} forwarded to ${forwardEmail} successfully!`);
+        alert(`✓ Ticket #INC-${selectedTicketId} forwarded to ${forwardEmail} successfully!`);
       } else if (response.data.simulation) {
         alert(`📝 Ticket forwarding logged for ${forwardEmail}.\n\nNote: Configure enterprise email in backend to send actual emails.\n\nTo enable email:\n1. Update .env file with Microsoft 365 credentials\n2. Restart backend server`);
       } else {
@@ -1336,6 +1400,16 @@ function TicketDetailView({ auth, ticket, onBack }) {
     }
   };
 
+  // If no ticket is selected, show loading or empty state
+  if (!currentTicket) {
+    return (
+      <div style={{ textAlign: 'center', padding: '40px' }}>
+        <Loader2 className="animate-spin" size={32} color="#94A3B8" />
+        <p style={{ marginTop: '16px', color: '#64748B' }}>Loading ticket details...</p>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
       <div className="flex justify-between items-center">
@@ -1345,8 +1419,8 @@ function TicketDetailView({ auth, ticket, onBack }) {
           </button>
           <div>
               <div className="flex items-center gap-3">
-                <h2 style={{ fontSize: '24px', fontWeight: 900 }}>#INC-{ticket?.id}</h2>
-                <StatusBadge status={ticket?.status || 'Open'} />
+                <h2 style={{ fontSize: '24px', fontWeight: 900 }}>#INC-{currentTicket?.id}</h2>
+                <StatusBadge status={currentTicket?.status || 'Open'} />
                 {isResignationTicket && (
                   <span style={{
                     fontSize: '11px',
@@ -1378,11 +1452,11 @@ function TicketDetailView({ auth, ticket, onBack }) {
                   </span>
                 )}
               </div>
-              <p style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{ticket?.title}</p>
+              <p style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{currentTicket?.title}</p>
           </div>
         </div>
         
-        {auth.user.role === 'it_admin' && ticket?.status !== 'Closed' && ticket?.status !== 'Resolved' && (
+        {auth.user.role === 'it_admin' && currentTicket?.status !== 'Closed' && currentTicket?.status !== 'Resolved' && (
           <div className="flex gap-4">
             <ActionButton 
               variant="secondary" 
@@ -1404,19 +1478,176 @@ function TicketDetailView({ auth, ticket, onBack }) {
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2.5fr 1fr', gap: '32px' }}>
-         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      <div style={{ display: 'flex', gap: '24px' }}>
+        {/* Ticket List Sidebar */}
+        <div style={{ 
+          width: sidebarCollapsed ? '60px' : '300px',
+          transition: 'width 0.3s ease',
+          position: 'relative'
+        }}>
+          <div className="alt-card" style={{ 
+            padding: '16px', 
+            height: 'fit-content',
+            position: 'sticky',
+            top: '20px'
+          }}>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              marginBottom: '16px'
+            }}>
+              {!sidebarCollapsed && <h4 style={{ fontSize: '14px', fontWeight: 800 }}>Other Tickets</h4>}
+              <button 
+                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  color: '#64748B'
+                }}
+              >
+                {sidebarCollapsed ? <ChevronRight size={20} /> : <ChevronDown size={20} />}
+              </button>
+            </div>
+
+            {!sidebarCollapsed && (
+              <>
+                {ticketsLoading ? (
+                  <div style={{ textAlign: 'center', padding: '20px' }}>
+                    <Loader2 className="animate-spin" size={24} color="#94A3B8" />
+                  </div>
+                ) : ticketsList.length === 0 ? (
+                  <p style={{ fontSize: '12px', color: '#94A3B8', textAlign: 'center', padding: '20px' }}>
+                    No other tickets found
+                  </p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {ticketsList.map(t => (
+                      <div
+                        key={t.id}
+                        onClick={() => handleTicketSelect(t)}
+                        style={{
+                          padding: '12px',
+                          borderRadius: '8px',
+                          background: t.id === selectedTicketId ? '#EFF6FF' : '#F8FAFC',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                          border: t.id === selectedTicketId ? '2px solid #3B82F6' : '1px solid transparent',
+                          boxShadow: t.id === selectedTicketId ? '0 2px 4px rgba(59, 130, 246, 0.1)' : 'none'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (t.id !== selectedTicketId) {
+                            e.currentTarget.style.background = '#F1F5F9';
+                            e.currentTarget.style.borderColor = '#E2E8F0';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (t.id !== selectedTicketId) {
+                            e.currentTarget.style.background = '#F8FAFC';
+                            e.currentTarget.style.borderColor = 'transparent';
+                          }
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                          <span style={{ 
+                            fontWeight: 700, 
+                            fontSize: '12px', 
+                            color: t.id === selectedTicketId ? '#3B82F6' : '#64748B'
+                          }}>
+                            #INC-{t.id}
+                          </span>
+                          <span style={{
+                            fontSize: '10px',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            background: t.priority === 'Critical' ? '#FEE2E2' :
+                                       t.priority === 'High' ? '#FFEDD5' :
+                                       t.priority === 'Medium' ? '#DBEAFE' : '#F1F5F9',
+                            color: t.priority === 'Critical' ? '#DC2626' :
+                                   t.priority === 'High' ? '#F97316' :
+                                   t.priority === 'Medium' ? '#3B82F6' : '#64748B'
+                          }}>
+                            {t.priority}
+                          </span>
+                        </div>
+                        <p style={{ 
+                          fontSize: '12px', 
+                          fontWeight: 600,
+                          marginBottom: '4px',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          color: t.id === selectedTicketId ? '#1E293B' : '#334155'
+                        }}>
+                          {t.title}
+                        </p>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '10px', color: '#94A3B8' }}>
+                            {formatBusinessDate(t.created_at)}
+                          </span>
+                          <span style={{
+                            fontSize: '10px',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            background: t.status === 'Open' ? '#FEE2E2' :
+                                       t.status === 'In Progress' ? '#FFEDD5' :
+                                       t.status === 'Resolved' ? '#DCFCE7' : '#F1F5F9',
+                            color: t.status === 'Open' ? '#DC2626' :
+                                   t.status === 'In Progress' ? '#F97316' :
+                                   t.status === 'Resolved' ? '#166534' : '#64748B'
+                          }}>
+                            {t.status}
+                          </span>
+                        </div>
+                        {t.category === 'Onboarding' && (
+                          <div style={{ marginTop: '4px' }}>
+                            <span style={{
+                              fontSize: '10px',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              background: '#DBEAFE',
+                              color: '#3B82F6'
+                            }}>
+                              👥 {t.number_of_agents || '?'} agents
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {sidebarCollapsed && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
+                <Ticket size={16} color="#94A3B8" />
+                <span style={{ fontSize: '10px', color: '#94A3B8' }}>{ticketsList.length}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '2.5fr 1fr', gap: '32px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div className="alt-card" style={{ padding: '32px', borderLeft: '6px solid var(--primary)' }}>
                <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
                   <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: 900 }}>
-                    {generateInitials(ticket?.requester_name)}
+                    {generateInitials(currentTicket?.requester_name)}
                   </div>
                </div>
                <div>
-                    <p style={{ fontWeight: 800 }}>Team Leader : {ticket?.requester_name}</p>
-                    <p style={{ paddingBottom: '15px', fontSize: '11px', color: '#94A3B8' }}>Submitted {formatBusinessDate(ticket?.created_at)}</p>
+                    <p style={{ fontWeight: 800 }}>Team Leader : {currentTicket?.requester_name}</p>
+                    <p style={{ paddingBottom: '15px', fontSize: '11px', color: '#94A3B8' }}>Submitted {formatBusinessDate(currentTicket?.created_at)}</p>
                   </div>
-               <p style={{ paddingBottom: '30px', fontWeight: 800 }}>Agent Name : {ticket?.title}</p>
+              
+              {/* Conditionally show Agent Name only for non-onboarding tickets */}
+              {!isOnboardingTicket && (
+                <p style={{ paddingBottom: '30px', fontWeight: 800 }}>Agent Name : {currentTicket?.title}</p>
+              )}
 
                {/* RESIGNATION SPECIFIC INFORMATION */}
                {isResignationTicket && (
@@ -1527,7 +1758,7 @@ function TicketDetailView({ auth, ticket, onBack }) {
                  </div>
                )}
 
-               <div style={{ fontSize: '15px', lineHeight: 1.8, color: '#334155' }}>{ticket?.description}</div>
+               <div style={{ fontSize: '15px', lineHeight: 1.8, color: '#334155' }}>{currentTicket?.description}</div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -1542,7 +1773,7 @@ function TicketDetailView({ auth, ticket, onBack }) {
                  </div>
                ))}
 
-               {ticket?.status !== 'Closed' && ticket?.status !== 'Resolved' && (
+               {currentTicket?.status !== 'Closed' && currentTicket?.status !== 'Resolved' && (
                  <div className="alt-card" style={{ padding: '24px' }}>
                    <form onSubmit={handlePost}>
                       <textarea 
@@ -1583,7 +1814,7 @@ function TicketDetailView({ auth, ticket, onBack }) {
                  </div>
                )}
 
-               {ticket?.status === 'Closed' || ticket?.status === 'Resolved' ? (
+               {currentTicket?.status === 'Closed' || currentTicket?.status === 'Resolved' ? (
                  <div className="alt-card" style={{ padding: '24px', background: '#F0F9FF', borderLeft: '4px solid #10B981' }}>
                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
                      <CheckCircle size={20} color="#10B981" />
@@ -1592,39 +1823,39 @@ function TicketDetailView({ auth, ticket, onBack }) {
                    <p style={{ fontSize: '13px', color: '#334155' }}>
                      This ticket has been closed and resolved. No further actions can be taken.
                    </p>
-                   {isResignationTicket && ticket?.resolution_note && (
+                   {isResignationTicket && currentTicket?.resolution_note && (
                      <div style={{ marginTop: '12px', padding: '12px', background: '#DCFCE7', borderRadius: '6px' }}>
                        <p style={{ fontSize: '12px', fontWeight: 600, color: '#166534' }}>
-                         <strong>Resolution Note:</strong> {ticket.resolution_note}
+                         <strong>Resolution Note:</strong> {currentTicket.resolution_note}
                        </p>
                      </div>
                    )}
                  </div>
                ) : null}
             </div>
-         </div>
+          </div>
 
-         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div className="alt-card" style={{ padding: '24px' }}>
                <h4 className="alt-card-title" style={{ marginBottom: '20px' }}>Incident Metadata</h4>
                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <MetaRow label="Severity" value={ticket?.priority} color={getPriorityStyles(ticket?.priority).color} />
+                  <MetaRow label="Severity" value={currentTicket?.priority} color={getPriorityStyles(currentTicket?.priority).color} />
                   <MetaRow label="Category" value={
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span>{ticket?.category}</span>
+                      <span>{currentTicket?.category}</span>
                       {isResignationTicket && <ShieldAlert size={14} color="#DC2626" />}
                       {isOnboardingTicket && <UserPlus size={14} color="#3B82F6" />}
                     </div>
                   } />
                   
-                  <MetaRow label="Campaign" value={ticket?.campaign || 'Not specified'} />
-                  <MetaRow label="Number of Agents" value={ticket?.number_of_agents || 'Not specified'} />
-                  <MetaRow label="Start Date" value={formatDate(ticket?.start_date)} />
-                  <MetaRow label="Training Period" value={ticket?.training_period || 'Not specified'} />
+                  <MetaRow label="Campaign" value={currentTicket?.campaign || 'Not specified'} />
+                  <MetaRow label="Number of Agents" value={currentTicket?.number_of_agents || 'Not specified'} />
+                  <MetaRow label="Start Date" value={formatDate(currentTicket?.start_date)} />
+                  <MetaRow label="Training Period" value={currentTicket?.training_period || 'Not specified'} />
                   <MetaRow label="Assigned To" value="IT Support" />
-                  <MetaRow label="Contact" value={ticket?.requester_email} />
-                  <MetaRow label="Ticket ID" value={`#INC-${ticket?.id}`} />
-                  <MetaRow label="Created" value={formatBusinessDate(ticket?.created_at)} />
+                  <MetaRow label="Contact" value={currentTicket?.requester_email} />
+                  <MetaRow label="Ticket ID" value={`#INC-${currentTicket?.id}`} />
+                  <MetaRow label="Created" value={formatBusinessDate(currentTicket?.created_at)} />
                   
                   {/* Resignation details */}
                   {isResignationTicket && (
@@ -1667,7 +1898,7 @@ function TicketDetailView({ auth, ticket, onBack }) {
                  <button 
                    className="btn-altitude btn-altitude-secondary"
                    onClick={() => setShowForwardModal(true)}
-                   disabled={ticket?.status === 'Closed' || ticket?.status === 'Resolved'}
+                   disabled={currentTicket?.status === 'Closed' || currentTicket?.status === 'Resolved'}
                  >
                    <Share2 size={14} /> Forward to Another Department
                  </button>
@@ -1675,7 +1906,7 @@ function TicketDetailView({ auth, ticket, onBack }) {
                    <button 
                      className="btn-altitude btn-altitude-primary"
                      onClick={handleCloseResolve}
-                     disabled={ticket?.status === 'Closed' || ticket?.status === 'Resolved' || loading}
+                     disabled={currentTicket?.status === 'Closed' || currentTicket?.status === 'Resolved' || loading}
                    >
                      <CheckCircle size={14} /> {loading ? 'Processing...' : 'Close & Resolve'}
                    </button>
@@ -1683,7 +1914,7 @@ function TicketDetailView({ auth, ticket, onBack }) {
                </div>
                
                {/* Special note for resignation tickets */}
-               {isResignationTicket && ticket?.status !== 'Closed' && ticket?.status !== 'Resolved' && (
+               {isResignationTicket && currentTicket?.status !== 'Closed' && currentTicket?.status !== 'Resolved' && (
                  <div style={{ 
                    marginTop: '16px', 
                    padding: '12px', 
@@ -1701,7 +1932,7 @@ function TicketDetailView({ auth, ticket, onBack }) {
                )}
 
                {/* Special note for onboarding tickets */}
-               {isOnboardingTicket && ticket?.status !== 'Closed' && ticket?.status !== 'Resolved' && (
+               {isOnboardingTicket && currentTicket?.status !== 'Closed' && currentTicket?.status !== 'Resolved' && (
                  <div style={{ 
                    marginTop: '16px', 
                    padding: '12px', 
@@ -1718,7 +1949,8 @@ function TicketDetailView({ auth, ticket, onBack }) {
                  </div>
                )}
             </div>
-         </div>
+          </div>
+        </div>
       </div>
 
       {/* Forward Ticket Modal */}
@@ -1769,9 +2001,9 @@ function TicketDetailView({ auth, ticket, onBack }) {
           <div className="alt-input-group" style={{ marginTop: '16px' }}>
             <div style={{ padding: '12px', background: '#F8FAFC', borderRadius: '8px', fontSize: '12px' }}>
               <p style={{ fontWeight: 600, marginBottom: '4px' }}>Ticket Details:</p>
-              <p>ID: #INC-{ticket?.id}</p>
-              <p>Agent: {ticket?.title}</p>
-              <p>Category: {ticket?.category}</p>
+              <p>ID: #INC-{currentTicket?.id}</p>
+              <p>Category: {currentTicket?.category}</p>
+              {!isOnboardingTicket && <p>Agent: {currentTicket?.title}</p>}
               {isResignationTicket && deviceInfo.device_name && (
                 <>
                   <p>Device: {deviceInfo.device_name}</p>
@@ -1817,8 +2049,6 @@ function TicketDetailView({ auth, ticket, onBack }) {
     </div>
   );
 }
-
-
 
 // -----------------------------------------------------------------------------
 const MetaRow = ({ label, value, color }) => (
@@ -1867,7 +2097,7 @@ function DashboardView({ auth, setView, onSelectTicket }) {
         </div>
         <div className="flex gap-4">
           <ActionButton variant="secondary" icon={Download}>Export Metrics</ActionButton>
-          <ActionButton variant="primary" icon={PlusCircle} onClick={() => setView('create')}>Log New Case</ActionButton>
+          <ActionButton variant="primary" icon={PlusCircle} onClick={() => setView('create')}>Log New Ticket</ActionButton>
         </div>
       </div>
 
@@ -2112,22 +2342,7 @@ function CreateTicketView({ auth, onDone }) {
       
       <div className="alt-card" style={{ padding: '40px' }}>
         <form onSubmit={handleSubmit}>
-          {/* Name & Surname of Agent - Conditionally hidden for Onboarding */}
-          {formData.category !== 'Onboarding' && (
-            <div className="alt-input-group">
-              <label className="alt-label">
-                Name & Surname of Agent 
-                <span className="text-danger"> *</span>
-              </label>
-              <input 
-                className="alt-input" 
-                required 
-                value={formData.title} 
-                onChange={e => setFormData({...formData, title: e.target.value})} 
-                placeholder="Agent details..." 
-              />
-            </div>
-          )}
+          
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             <div className="alt-input-group">
@@ -2163,6 +2378,23 @@ function CreateTicketView({ auth, onDone }) {
             </div>
           </div>
 
+          {/* Name & Surname of Agent - Conditionally hidden for Onboarding */}
+          {formData.category !== 'Onboarding' && (
+            <div className="alt-input-group">
+              <label className="alt-label">
+                Name & Surname of Agent 
+                <span className="text-danger"> *</span>
+              </label>
+              <input 
+                className="alt-input" 
+                required 
+                value={formData.title} 
+                onChange={e => setFormData({...formData, title: e.target.value})} 
+                placeholder="Agent details..." 
+              />
+            </div>
+          )}
+
           {/* Resignation Section */}
           {formData.category === 'Resignation' && (
             <div style={{ 
@@ -2184,7 +2416,7 @@ function CreateTicketView({ auth, onDone }) {
               
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
                 <div className="alt-input-group">
-                  <label className="alt-label">Device Name <span className="text-danger">*</span></label>
+                  <label className="alt-label">Device Returned <span className="text-danger">*</span></label>
                   <select 
                     className="alt-select" 
                     required={formData.category === 'Resignation'}
@@ -2197,7 +2429,6 @@ function CreateTicketView({ auth, onDone }) {
                     <option value="Laptop collected by IT">Laptop collected by IT</option>
                     <option value="All equipment with IT">All equipment with IT</option>
                     <option value="Desktop">Desktop</option>
-                    <option value="Other">Other</option>
                   </select>
                 </div>
                 
@@ -2214,7 +2445,7 @@ function CreateTicketView({ auth, onDone }) {
                     <option value="Lenovo">Lenovo</option>
                     <option value="Asus">Asus</option>
                     <option value="Huawei">Huawei</option>
-                    <option value="Other">Other</option>
+                    <option value="Desktop">Desktop</option>
                   </select>
                 </div>
               </div>
@@ -2291,7 +2522,8 @@ function CreateTicketView({ auth, onDone }) {
                     <option value="Hollard">Hollard</option>
                     <option value="Absa">Absa</option>
                     <option value="IEC">IEC</option>
-                    <option value="Other">Other</option>
+                    <option value="Team Leader">QA</option>
+                    <option value="Team Leader">Team Leader</option>
                   </select>
                 </div>
 
@@ -2311,7 +2543,7 @@ function CreateTicketView({ auth, onDone }) {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
                 <div className="alt-input-group">
-                  <label className="alt-label">Start Date <span className="text-danger">*</span></label>
+                  <label className="alt-label">Training Start Date <span className="text-danger">*</span></label>
                   <input
                     type="date" 
                     className="alt-input"

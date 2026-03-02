@@ -1,0 +1,10 @@
+# frontend/render.yaml
+services:
+  - type: web
+    name: altitude-bpo-frontend
+    env: static
+    buildCommand: npm run build
+    staticPublishPath: dist  # Vite builds to 'dist', not 'build'
+    envVars:
+      - key: VITE_API_URL
+        value: https://your-backend-url.onrender.com/api
