@@ -2,8 +2,12 @@ services:
   - type: web
     name: altitude-bpo-frontend
     env: static
-    buildCommand: npm ci --omit=optional && npm run build
+    buildCommand: npm install --force --omit=optional && npm run build
     staticPublishPath: dist
     envVars:
       - key: VITE_API_URL
         value: https://altitude-backend-0j55.onrender.com/api
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache
