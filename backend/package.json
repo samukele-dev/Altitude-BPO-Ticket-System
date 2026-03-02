@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "preinstall": "node -e \"if (process.env.RENDER) console.log('Installing on Render...')\"",
+    "postinstall": "node -e \"try { require('pg'); console.log('✅ pg module verified'); } catch(e) { console.error('❌ pg module not found'); process.exit(1); }\""
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
