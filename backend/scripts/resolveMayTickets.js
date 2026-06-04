@@ -1,9 +1,12 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
-// Database connection
+// Database connection with SSL for Render
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false  // Required for Render PostgreSQL
+  }
 });
 
 async function resolveMayTickets() {
