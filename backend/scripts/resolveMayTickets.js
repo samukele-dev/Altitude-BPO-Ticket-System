@@ -65,8 +65,6 @@ async function resolveMayTickets() {
         AND status != 'closed'
       RETURNING 
         id, 
-        ticket_number,
-        status as old_status,
         title
     `;
     
@@ -87,7 +85,7 @@ async function resolveMayTickets() {
         `, [
           ticket.id,
           'status_change',
-          `Ticket auto-resolved: Status changed from ${ticket.old_status} to closed (May 2026 bulk resolution)`,
+          `Ticket auto-resolved: Status changed to closed (May 2026 bulk resolution)`,
           'system'
         ]);
       }
