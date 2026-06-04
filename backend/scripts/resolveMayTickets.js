@@ -52,44 +52,20 @@ async function resolveMayTickets() {
     console.log('Press Ctrl+C to cancel, or wait 5 seconds to continue...');
     await new Promise(resolve => setTimeout(resolve, 5000));
     
-    // Update all May tickets to resolved/closed
+    // Update all May tickets to closed (simple update, no activity logging)
     const updateQuery = `
       UPDATE tickets 
       SET 
         status = 'closed',
         resolved_at = CURRENT_TIMESTAMP,
-        updated_at = CURRENT_TIMESTAMP,
-        resolution_note = 'Auto-resolved: All May 2026 tickets resolved as part of bulk cleanup'
+        updated_at = CURRENT_TIMESTAMP
       WHERE created_at >= '2026-05-01' 
         AND created_at < '2026-06-01'
         AND status != 'closed'
-      RETURNING 
-        id, 
-        title
     `;
     
     const updateResult = await client.query(updateQuery);
     const updatedCount = updateResult.rowCount;
-    
-    // Create activity log entries for each resolved ticket
-    if (updatedCount > 0) {
-      for (const ticket of updateResult.rows) {
-        await client.query(`
-          INSERT INTO ticket_activities (
-            ticket_id,
-            action,
-            description,
-            created_by,
-            created_at
-          ) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-        `, [
-          ticket.id,
-          'status_change',
-          `Ticket auto-resolved: Status changed to closed (May 2026 bulk resolution)`,
-          'system'
-        ]);
-      }
-    }
     
     // Commit transaction
     await client.query('COMMIT');
@@ -102,6 +78,8 @@ async function resolveMayTickets() {
     const finalCheck = await client.query(`
       SELECT 
         COUNT(*) FILTER (WHERE status = 'open') as still_open,
+        COUNT(*) FILTER (WHERE status = 'in_progress') as still_in_progress,
+        COUNT(*) FILTER (WHERE status = 'pending') as still_pending,
         COUNT(*) FILTER (WHERE status = 'closed') as now_closed
       FROM tickets 
       WHERE created_at >= '2026-05-01' 
@@ -110,6 +88,8 @@ async function resolveMayTickets() {
     
     console.log(`\n📈 Final Status for May 2026:`);
     console.log(`   Still open: ${finalCheck.rows[0].still_open}`);
+    console.log(`   Still in progress: ${finalCheck.rows[0].still_in_progress}`);
+    console.log(`   Still pending: ${finalCheck.rows[0].still_pending}`);
     console.log(`   Now closed: ${finalCheck.rows[0].now_closed}`);
     
   } catch (error) {
