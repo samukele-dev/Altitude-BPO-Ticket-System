@@ -2302,7 +2302,7 @@ function TicketsListView({ auth, onSelectTicket }) {
             }}
           >
             <span style={{ textTransform: 'capitalize' }}>
-              {category === 'all' ? '📋 All' : category}
+              {category === 'all' ? 'All' : category}
             </span>
             <span style={{
               background: filterCategory === category ? '#DBEAFE' : '#F1F5F9',
