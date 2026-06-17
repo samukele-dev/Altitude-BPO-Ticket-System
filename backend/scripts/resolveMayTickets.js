@@ -25,6 +25,7 @@ async function resolveMayTickets() {
         COUNT(*) FILTER (WHERE status = 'open') as open_tickets,
         COUNT(*) FILTER (WHERE status = 'in_progress') as in_progress_tickets,
         COUNT(*) FILTER (WHERE status = 'pending') as pending_tickets,
+        COUNT(*) FILTER (WHERE status = 'resolved') as already_resolved,
         COUNT(*) FILTER (WHERE status = 'closed') as already_closed
       FROM tickets 
       WHERE created_at >= '2026-05-01' 
@@ -39,6 +40,7 @@ async function resolveMayTickets() {
     console.log(`   Open tickets: ${stats.open_tickets}`);
     console.log(`   In Progress: ${stats.in_progress_tickets}`);
     console.log(`   Pending: ${stats.pending_tickets}`);
+    console.log(`   Already resolved: ${stats.already_resolved}`);
     console.log(`   Already closed: ${stats.already_closed}`);
     
     if (stats.total_tickets === 0) {
@@ -48,20 +50,20 @@ async function resolveMayTickets() {
     }
     
     // Ask for confirmation
-    console.log('\n⚠️  This will resolve all non-closed tickets from May 2026');
+    console.log('\n⚠️  This will RESOLVE (not close) all non-resolved tickets from May 2026');
     console.log('Press Ctrl+C to cancel, or wait 5 seconds to continue...');
     await new Promise(resolve => setTimeout(resolve, 5000));
     
-    // Update all May tickets to closed (simple update, no activity logging)
+    // Update all May tickets to RESOLVED (not closed)
     const updateQuery = `
       UPDATE tickets 
       SET 
-        status = 'closed',
+        status = 'resolved',
         resolved_at = CURRENT_TIMESTAMP,
         updated_at = CURRENT_TIMESTAMP
       WHERE created_at >= '2026-05-01' 
         AND created_at < '2026-06-01'
-        AND status != 'closed'
+        AND status NOT IN ('resolved', 'closed')
     `;
     
     const updateResult = await client.query(updateQuery);
@@ -72,6 +74,7 @@ async function resolveMayTickets() {
     
     console.log('\n✅ Successfully resolved tickets!');
     console.log(`   Total tickets resolved: ${updatedCount}`);
+    console.log(`   Already resolved: ${stats.already_resolved}`);
     console.log(`   Already closed: ${stats.already_closed}`);
     
     // Show updated statistics
@@ -80,7 +83,8 @@ async function resolveMayTickets() {
         COUNT(*) FILTER (WHERE status = 'open') as still_open,
         COUNT(*) FILTER (WHERE status = 'in_progress') as still_in_progress,
         COUNT(*) FILTER (WHERE status = 'pending') as still_pending,
-        COUNT(*) FILTER (WHERE status = 'closed') as now_closed
+        COUNT(*) FILTER (WHERE status = 'resolved') as now_resolved,
+        COUNT(*) FILTER (WHERE status = 'closed') as closed
       FROM tickets 
       WHERE created_at >= '2026-05-01' 
         AND created_at < '2026-06-01'
@@ -90,7 +94,8 @@ async function resolveMayTickets() {
     console.log(`   Still open: ${finalCheck.rows[0].still_open}`);
     console.log(`   Still in progress: ${finalCheck.rows[0].still_in_progress}`);
     console.log(`   Still pending: ${finalCheck.rows[0].still_pending}`);
-    console.log(`   Now closed: ${finalCheck.rows[0].now_closed}`);
+    console.log(`   Now resolved: ${finalCheck.rows[0].now_resolved}`);
+    console.log(`   Closed: ${finalCheck.rows[0].closed}`);
     
   } catch (error) {
     await client.query('ROLLBACK');
@@ -102,5 +107,4 @@ async function resolveMayTickets() {
   }
 }
 
-// Run the script
 resolveMayTickets().catch(console.error);
