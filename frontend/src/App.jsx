@@ -2183,11 +2183,14 @@ const StatusLine = ({ label, status, color }) => (
 );
 
 // =============================================================================
-// MODULE: TICKETS LIST
+// MODULE: TICKETS LIST WITH CATEGORY FILTER
 // =============================================================================
 function TicketsListView({ auth, onSelectTicket }) {
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filterCategory, setFilterCategory] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     const fetchTickets = async () => {
@@ -2205,62 +2208,256 @@ function TicketsListView({ auth, onSelectTicket }) {
     fetchTickets();
   }, [auth.token]);
 
+  // Get unique categories from tickets
+  const categories = ['all', ...new Set(tickets.map(t => t.category).filter(Boolean))];
+  const statuses = ['all', 'Open', 'In Progress', 'Resolved', 'Closed'];
+
+  // Filter tickets
+  const filteredTickets = tickets.filter(ticket => {
+    // Category filter
+    if (filterCategory !== 'all' && ticket.category !== filterCategory) {
+      return false;
+    }
+    // Status filter
+    if (filterStatus !== 'all' && ticket.status !== filterStatus) {
+      return false;
+    }
+    // Search filter (search in title, description, requester name)
+    if (searchTerm) {
+      const search = searchTerm.toLowerCase();
+      return (
+        ticket.title?.toLowerCase().includes(search) ||
+        ticket.description?.toLowerCase().includes(search) ||
+        ticket.requester_name?.toLowerCase().includes(search) ||
+        ticket.id?.toString().includes(search)
+      );
+    }
+    return true;
+  });
+
+  // Get category counts for badge display
+  const getCategoryCount = (category) => {
+    if (category === 'all') return tickets.length;
+    return tickets.filter(t => t.category === category).length;
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div className="flex justify-between items-end">
         <div>
           <h2 style={{ fontSize: '28px', fontWeight: 900 }}>All Tickets</h2>
-          <p style={{ color: 'var(--text-muted)' }}>Managing {tickets.length} enterprise records.</p>
+          <p style={{ color: 'var(--text-muted)' }}>
+            Managing {filteredTickets.length} of {tickets.length} enterprise records.
+            {filterCategory !== 'all' && ` • Filtered by: ${filterCategory}`}
+            {filterStatus !== 'all' && ` • Status: ${filterStatus}`}
+          </p>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
-          <ActionButton variant="secondary" icon={Filter}>Advance Filters</ActionButton>
+          <ActionButton 
+            variant="secondary" 
+            icon={RefreshCw} 
+            onClick={() => {
+              setFilterCategory('all');
+              setFilterStatus('all');
+              setSearchTerm('');
+            }}
+          >
+            Clear Filters
+          </ActionButton>
         </div>
       </div>
 
-      <div className="alt-card">
-        <div className="alt-table-container">
-          <table className="alt-table">
-            <thead>
-              <tr>
-                <th>Reference</th>
-                <th>Subject</th>
-                <th>Requester</th>
-                <th>Stage</th>
-                <th>Impact</th>
-                <th>Last Update</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {tickets.map(t => (
-                <tr key={t.id} onClick={() => onSelectTicket(t)} style={{ cursor: 'pointer' }}>
-                  <td><span style={{ fontWeight: 800, color: '#94A3B8' }}>#INC-{t.id}</span></td>
-                  <td>
-                    <p style={{ fontWeight: 700 }}>{t.title}</p>
-                    <span style={{ fontSize: '11px', color: '#6366F1', fontWeight: 700 }}>{t.category}</span>
-                  </td>
-                  <td>
-                    <div className="flex items-center gap-2">
-                       <div style={{ width: '24px', height: '24px', borderRadius: '6px', background: '#F1F5F9', fontSize: '10px', fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                         {generateInitials(t.requester_name)}
-                       </div>
-                       <span style={{ fontSize: '13px', fontWeight: 600 }}>{t.requester_name}</span>
-                    </div>
-                  </td>
-                  <td><StatusBadge status={t.status} /></td>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 10px', borderRadius: '6px', background: getPriorityStyles(t.priority).backgroundColor }}>
-                       <span style={{ fontSize: '11px', fontWeight: 800, color: getPriorityStyles(t.priority).color }}>{t.priority}</span>
-                    </div>
-                  </td>
-                  <td><span style={{ fontSize: '12px', color: '#94A3B8' }}>{formatBusinessDate(t.created_at)}</span></td>
-                  <td><ChevronRight size={16} color="#CBD5E1" /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {/* Search Bar */}
+      <div className="search-wrapper" style={{ width: '100%' }}>
+        <Search className="search-icon" size={16} style={{ position: 'absolute', left: '14px', top: '10px', color: '#94A3B8' }} />
+        <input 
+          type="text" 
+          className="search-input" 
+          placeholder="Search tickets by ID, title, requester name..." 
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          style={{ paddingLeft: '40px', width: '100%' }}
+        />
       </div>
+
+      {/* Category Filter Chips */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '4px 0' }}>
+        {categories.map(category => (
+          <button
+            key={category}
+            onClick={() => setFilterCategory(category)}
+            style={{
+              padding: '6px 16px',
+              borderRadius: '20px',
+              border: filterCategory === category ? '2px solid #3B82F6' : '1px solid #E2E8F0',
+              background: filterCategory === category ? '#EFF6FF' : 'white',
+              color: filterCategory === category ? '#3B82F6' : '#64748B',
+              fontWeight: filterCategory === category ? 700 : 500,
+              fontSize: '13px',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <span style={{ textTransform: 'capitalize' }}>
+              {category === 'all' ? '📋 All' : category}
+            </span>
+            <span style={{
+              background: filterCategory === category ? '#DBEAFE' : '#F1F5F9',
+              padding: '0px 8px',
+              borderRadius: '12px',
+              fontSize: '11px',
+              fontWeight: 700
+            }}>
+              {getCategoryCount(category)}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* Status Filter Chips */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '4px 0' }}>
+        {statuses.map(status => (
+          <button
+            key={status}
+            onClick={() => setFilterStatus(status)}
+            style={{
+              padding: '4px 14px',
+              borderRadius: '16px',
+              border: filterStatus === status ? '2px solid #3B82F6' : '1px solid #E2E8F0',
+              background: filterStatus === status ? '#EFF6FF' : 'white',
+              color: filterStatus === status ? '#3B82F6' : '#64748B',
+              fontWeight: filterStatus === status ? 700 : 500,
+              fontSize: '12px',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            {status === 'all' ? 'All Status' : status}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="alt-card" style={{ padding: '40px', textAlign: 'center' }}>
+          <Loader2 className="animate-spin" size={32} style={{ margin: '0 auto', color: '#3B82F6' }} />
+          <p style={{ marginTop: '16px', color: '#64748B' }}>Loading tickets...</p>
+        </div>
+      ) : (
+        <div className="alt-card">
+          <div className="alt-table-container">
+            <table className="alt-table">
+              <thead>
+                <tr>
+                  <th>Reference</th>
+                  <th>Subject</th>
+                  <th>Requester</th>
+                  <th>Category</th>
+                  <th>Stage</th>
+                  <th>Impact</th>
+                  <th>Last Update</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredTickets.length === 0 ? (
+                  <tr>
+                    <td colSpan="8" style={{ textAlign: 'center', padding: '60px 20px' }}>
+                      <div style={{ 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        alignItems: 'center',
+                        gap: '12px'
+                      }}>
+                        <Ticket size={48} color="#CBD5E1" />
+                        <p style={{ fontWeight: 700, color: '#64748B', fontSize: '16px' }}>
+                          No tickets found
+                        </p>
+                        <p style={{ fontSize: '13px', color: '#94A3B8' }}>
+                          {filterCategory !== 'all' || filterStatus !== 'all' || searchTerm
+                            ? 'Try adjusting your filters or search terms'
+                            : 'No tickets have been created yet'}
+                        </p>
+                        {(filterCategory !== 'all' || filterStatus !== 'all' || searchTerm) && (
+                          <button
+                            onClick={() => {
+                              setFilterCategory('all');
+                              setFilterStatus('all');
+                              setSearchTerm('');
+                            }}
+                            style={{
+                              padding: '8px 20px',
+                              background: '#EFF6FF',
+                              color: '#3B82F6',
+                              border: '1px solid #BFDBFE',
+                              borderRadius: '8px',
+                              cursor: 'pointer',
+                              fontWeight: 600,
+                              fontSize: '13px'
+                            }}
+                          >
+                            Clear All Filters
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredTickets.map(t => (
+                    <tr key={t.id} onClick={() => onSelectTicket(t)} style={{ cursor: 'pointer' }}>
+                      <td><span style={{ fontWeight: 800, color: '#94A3B8' }}>#INC-{t.id}</span></td>
+                      <td>
+                        <p style={{ fontWeight: 700 }}>{t.title}</p>
+                        <span style={{ fontSize: '11px', color: '#6366F1', fontWeight: 700 }}>{t.category}</span>
+                      </td>
+                      <td>
+                        <div className="flex items-center gap-2">
+                          <div style={{ width: '24px', height: '24px', borderRadius: '6px', background: '#F1F5F9', fontSize: '10px', fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {generateInitials(t.requester_name)}
+                          </div>
+                          <span style={{ fontSize: '13px', fontWeight: 600 }}>{t.requester_name}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          padding: '4px 10px',
+                          borderRadius: '6px',
+                          background: t.category === 'Resignation' ? '#FEF2F2' :
+                                     t.category === 'Onboarding' ? '#EFF6FF' :
+                                     t.category === 'Hardware' ? '#F0FDF4' :
+                                     t.category === 'Software' ? '#FEF3C7' :
+                                     t.category === 'Network' ? '#FCE7F3' :
+                                     t.category === 'Access/Security' ? '#E0E7FF' : '#F1F5F9',
+                          color: t.category === 'Resignation' ? '#DC2626' :
+                                 t.category === 'Onboarding' ? '#3B82F6' :
+                                 t.category === 'Hardware' ? '#16A34A' :
+                                 t.category === 'Software' ? '#D97706' :
+                                 t.category === 'Network' ? '#DB2777' :
+                                 t.category === 'Access/Security' ? '#4338CA' : '#64748B'
+                        }}>
+                          {t.category}
+                        </span>
+                      </td>
+                      <td><StatusBadge status={t.status} /></td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 10px', borderRadius: '6px', background: getPriorityStyles(t.priority).backgroundColor }}>
+                          <span style={{ fontSize: '11px', fontWeight: 800, color: getPriorityStyles(t.priority).color }}>{t.priority}</span>
+                        </div>
+                      </td>
+                      <td><span style={{ fontSize: '12px', color: '#94A3B8' }}>{formatBusinessDate(t.created_at)}</span></td>
+                      <td><ChevronRight size={16} color="#CBD5E1" /></td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
