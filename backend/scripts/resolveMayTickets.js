@@ -13,7 +13,7 @@ async function resolveMayTickets() {
   const client = await pool.connect();
   
   try {
-    console.log('🔍 Starting to resolve tickets from May 2026...');
+    console.log('🔍 Starting to RESOLVE all May 2026 tickets (including closed ones)...');
     
     // Start transaction
     await client.query('BEGIN');
@@ -26,7 +26,7 @@ async function resolveMayTickets() {
         COUNT(*) FILTER (WHERE status = 'in_progress') as in_progress_tickets,
         COUNT(*) FILTER (WHERE status = 'pending') as pending_tickets,
         COUNT(*) FILTER (WHERE status = 'resolved') as already_resolved,
-        COUNT(*) FILTER (WHERE status = 'closed') as already_closed
+        COUNT(*) FILTER (WHERE status = 'closed') as currently_closed
       FROM tickets 
       WHERE created_at >= '2026-05-01' 
         AND created_at < '2026-06-01'
@@ -41,7 +41,8 @@ async function resolveMayTickets() {
     console.log(`   In Progress: ${stats.in_progress_tickets}`);
     console.log(`   Pending: ${stats.pending_tickets}`);
     console.log(`   Already resolved: ${stats.already_resolved}`);
-    console.log(`   Already closed: ${stats.already_closed}`);
+    console.log(`   Currently closed: ${stats.currently_closed}`);
+    console.log(`   Tickets to be changed to resolved: ${stats.total_tickets - stats.already_resolved}`);
     
     if (stats.total_tickets === 0) {
       console.log('⚠️  No tickets found for May 2026');
@@ -50,11 +51,12 @@ async function resolveMayTickets() {
     }
     
     // Ask for confirmation
-    console.log('\n⚠️  This will RESOLVE (not close) all non-resolved tickets from May 2026');
+    console.log('\n⚠️  This will CHANGE ALL May 2026 tickets to "resolved" status (including closed ones)');
+    console.log(`   ${stats.total_tickets - stats.already_resolved} tickets will be updated`);
     console.log('Press Ctrl+C to cancel, or wait 5 seconds to continue...');
     await new Promise(resolve => setTimeout(resolve, 5000));
     
-    // Update all May tickets to RESOLVED (not closed)
+    // Update ALL May tickets to RESOLVED (including closed ones)
     const updateQuery = `
       UPDATE tickets 
       SET 
@@ -63,7 +65,7 @@ async function resolveMayTickets() {
         updated_at = CURRENT_TIMESTAMP
       WHERE created_at >= '2026-05-01' 
         AND created_at < '2026-06-01'
-        AND status NOT IN ('resolved', 'closed')
+        AND status != 'resolved'  -- Only exclude already resolved tickets
     `;
     
     const updateResult = await client.query(updateQuery);
@@ -72,18 +74,17 @@ async function resolveMayTickets() {
     // Commit transaction
     await client.query('COMMIT');
     
-    console.log('\n✅ Successfully resolved tickets!');
-    console.log(`   Total tickets resolved: ${updatedCount}`);
-    console.log(`   Already resolved: ${stats.already_resolved}`);
-    console.log(`   Already closed: ${stats.already_closed}`);
+    console.log('\n✅ Successfully changed all tickets to RESOLVED!');
+    console.log(`   Total tickets changed to resolved: ${updatedCount}`);
+    console.log(`   Already resolved (unchanged): ${stats.already_resolved}`);
     
     // Show updated statistics
     const finalCheck = await client.query(`
       SELECT 
-        COUNT(*) FILTER (WHERE status = 'open') as still_open,
-        COUNT(*) FILTER (WHERE status = 'in_progress') as still_in_progress,
-        COUNT(*) FILTER (WHERE status = 'pending') as still_pending,
-        COUNT(*) FILTER (WHERE status = 'resolved') as now_resolved,
+        COUNT(*) FILTER (WHERE status = 'open') as open,
+        COUNT(*) FILTER (WHERE status = 'in_progress') as in_progress,
+        COUNT(*) FILTER (WHERE status = 'pending') as pending,
+        COUNT(*) FILTER (WHERE status = 'resolved') as resolved,
         COUNT(*) FILTER (WHERE status = 'closed') as closed
       FROM tickets 
       WHERE created_at >= '2026-05-01' 
@@ -91,10 +92,10 @@ async function resolveMayTickets() {
     `);
     
     console.log(`\n📈 Final Status for May 2026:`);
-    console.log(`   Still open: ${finalCheck.rows[0].still_open}`);
-    console.log(`   Still in progress: ${finalCheck.rows[0].still_in_progress}`);
-    console.log(`   Still pending: ${finalCheck.rows[0].still_pending}`);
-    console.log(`   Now resolved: ${finalCheck.rows[0].now_resolved}`);
+    console.log(`   Open: ${finalCheck.rows[0].open}`);
+    console.log(`   In Progress: ${finalCheck.rows[0].in_progress}`);
+    console.log(`   Pending: ${finalCheck.rows[0].pending}`);
+    console.log(`   Resolved: ${finalCheck.rows[0].resolved} ✅`);
     console.log(`   Closed: ${finalCheck.rows[0].closed}`);
     
   } catch (error) {
